@@ -2,7 +2,7 @@
   (:require
     [cheshire.core :as json]
     [clj-http.client :as http]
-    [clojure.sse-stream :as sse-stream]))
+    [insilicalabs.sse-stream :as sse-stream]))
 
 (defn- create-context [context-or-text]
   (cond

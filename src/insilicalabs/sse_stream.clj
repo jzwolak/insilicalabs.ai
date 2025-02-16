@@ -1,4 +1,4 @@
-(ns clojure.sse-stream
+(ns insilicalabs.sse-stream
   (:require [cheshire.core :as json]
             [clojure.string :as str]))
 
