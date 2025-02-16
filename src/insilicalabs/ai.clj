@@ -1,4 +1,4 @@
-(ns clojure.ai
+(ns insilicalabs.ai
   (:require
     [cheshire.core :as json]
     [clj-http.client :as http]

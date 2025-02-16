@@ -65,3 +65,29 @@ do something with the partial chat completion.
 ```
 => (ai/stream config "Recommend some places to travel." #(print %))
 ```
+
+## Recommendations
+
+When integrating ChatGPT into your app, we recommend wrapping the fns you plan to use with partial fns that include
+the config. For example, if your API key is stored in the environment variable "OPENAI_API_KEY" then you might do the
+following:
+
+```
+(ns example.mycompany
+  (:require [insilicalabs.ai :as ai]))
+
+(defn get-config []
+  {:openai-api-key (System/getenv "OPENAI_API_KEY")})
+
+(defn chat [context new-message] (ai/chat (get-config) context new-message))
+```
+
+Reconstructing the config on each call should be a small cost compared to calling the API and has the benefit of
+not storing the API key in memory. If performance is of the utmost concern or retrieving the API key is much more
+expensive, then a delay may be useful as follows.
+
+```
+(defonce config (delay {:openai-api-key (System/getenv "OPENAI_API_KEY}))
+
+(defn chat [context new-message] (ai/chat @config context new-message))
+```
