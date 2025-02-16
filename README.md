@@ -17,7 +17,7 @@ Then do the following:
 
 ## Chatting
 
-Using Clojure's `*1` variable in the REPL you can easily hold a chat as follows.
+Using Clojure's `*1` variable in the REPL you can hold a chat as follows.
 
 ```
 => (def config {:openai-api-key (str/trim (slurp "openai-api-key.txt"))})
@@ -59,7 +59,7 @@ And so on.
 ## Streaming
 
 OpenAI has a streaming API to receive partial completions of a chat request in a stream until the whole completion is
-sent. Use this with the `stream` fn as follows. The `stream` fn takes a consumer, which is a single arg fn that will
+sent. Use this with `stream` as follows. `stream` takes a consumer, which is a single arg fn that will
 do something with the partial chat completion.
 
 ```
