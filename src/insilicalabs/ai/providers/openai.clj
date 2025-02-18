@@ -1,8 +1,8 @@
-(ns insilicalabs.ai
+(ns insilicalabs.ai.providers.openai
   (:require
     [cheshire.core :as json]
     [clj-http.client :as http]
-    [insilicalabs.sse-stream :as sse-stream]))
+    [insilicalabs.ai.providers.sse-stream :as sse-stream]))
 
 (defn- create-context [context-or-text]
   (cond

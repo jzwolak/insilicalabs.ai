@@ -1,6 +1,9 @@
-(ns insilicalabs.sse-stream
+(ns insilicalabs.ai.providers.sse-stream
   (:require [cheshire.core :as json]
             [clojure.string :as str]))
+;
+; warning:  this will likely be incorporated into 'insilicalabs.ai.providers.openai'
+;
 
 ; SSE Stream - Server Sent Event Stream
 ;
