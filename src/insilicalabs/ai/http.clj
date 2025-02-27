@@ -59,55 +59,56 @@
 ;; todo: doc
 ;;   - http errors are not returned as exceptions
 (defn ^:impure request
-  [& configs]
-  (let [config (apply merge http-request-config-mods configs)]
-    (if (nil? config)
-      {:success false
+  [config & more-configs]
+  (let [config-in (apply merge config more-configs)]
+    (if (nil? config-in)
+      {:success    false
        :fail-point fail-point-http-config
-       :reason "No configuration provided"}
-      (if (not (map? config))
-        {:success false
+       :reason     "Config can't be nil"}
+      (if (not (map? config-in))
+        {:success    false
          :fail-point fail-point-http-config
-         :reason "Configuration must be a map"}
-        (if (empty? config)
-          {:success false
+         :reason     "Config must be a map"}
+        (if (empty? config-in)
+          {:success    false
            :fail-point fail-point-http-config
-           :reason "Configuration map cannot be empty"}
-          (if (not (contains? config :method))
-            {:success false
-             :fail-point fail-point-http-config
-             :reason "Config must contain the key ':method'"}
-            (if (not (#{:get :post} (:method config)))
-              {:success false
+           :reason     "Config map cannot be empty"}
+          (let [config-final (merge http-request-config-mods config-in)]
+            (if (not (contains? config-final :method))
+              {:success    false
                :fail-point fail-point-http-config
-               :reason "The :method value must be either ':get' or ':post'"}
-              (if (not (contains? config :url))
-                {:success false
+               :reason     "Config must contain the key ':method'"}
+              (if (not (#{:get :post} (:method config-final)))
+                {:success    false
                  :fail-point fail-point-http-config
-                 :reason "Config must contain a URL defined in ':url'"}
-                (if (not (string? (:url config)))
-                  {:success false
+                 :reason     "The ':method' value in the config must be either ':get' or ':post'"}
+                (if (not (contains? config-final :url))
+                  {:success    false
                    :fail-point fail-point-http-config
-                   :reason "The value of ':url' must be a string"}
-                  (try
-                    (let [response (http/request config)]
-                      (if (http/success? response)
-                        {:success true :response response}
-                        {:success false
-                         :fail-point fail-point-http-request
-                         :reason (str "HTTP request failed. " (:reason-phrase response) " (" (:status response) ").")
-                         :response response}))
-                    (catch IOException e
-                      (let [reason-start (str "HTTP request failed with exception '" (.getName (class e)) "'.")
-                            message (str (.getMessage e))
-                            reason (if (or (nil? message) (= message ""))
-                                     reason-start
-                                     (str reason-start " " message "."))]
-                        (println message)
-                        {:success false
-                         :fail-point fail-point-http-request
-                         :reason reason
-                         :exception e}))))))))))))
+                   :reason     "Config must contain a URL defined in ':url'"}
+                  (if (not (string? (:url config-final)))
+                    {:success    false
+                     :fail-point fail-point-http-config
+                     :reason     "The ':url' value in the config must be a string"}
+                    (try
+                      (let [response (http/request config-final)]
+                        (if (http/success? response)
+                          {:success true :response response}
+                          {:success    false
+                           :fail-point fail-point-http-request
+                           :reason     (str "HTTP request failed. " (:reason-phrase response) " (" (:status response) ").")
+                           :response   response}))
+                      (catch IOException e
+                        (let [reason-start (str "HTTP request failed with exception '" (.getName (class e)) "'.")
+                              message (str (.getMessage e))
+                              reason (if (or (nil? message) (= message ""))
+                                       reason-start
+                                       (str reason-start " " message "."))]
+                          (println message)
+                          {:success    false
+                           :fail-point fail-point-http-request
+                           :reason     reason
+                           :exception  e})))))))))))))
 ;; java.net.MalformedURLException
 ;; java.net.UnknownHostException
 ;; ...

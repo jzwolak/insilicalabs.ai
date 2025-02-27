@@ -1,2 +1,11 @@
-{:deps {clj-http/clj-http {:mvn/version "3.12.3"}
-        cheshire/cheshire {:mvn/version "5.10.0"}}}
+{:deps    {clj-http/clj-http {:mvn/version "3.12.3"}
+           cheshire/cheshire {:mvn/version "5.10.0"}}
+
+ ;; run tests with:
+ ;;   clj -X:test
+ ;; see: https://github.com/cognitect-labs/test-runner/
+ :aliases {:test {:extra-paths ["test"]
+                  :extra-deps  {io.github.cognitect-labs/test-runner
+                                {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                  :main-opts   ["-m" "cognitect.test-runner"]
+                  :exec-fn     cognitect.test-runner.api/test}}}
