@@ -11,7 +11,7 @@
 
 (defn perform-request-test
   ([config expected]
-   (perform-request-test config expected nil))              ;; Call three-argument version with mock-response as nil
+   (perform-request-test config expected nil))
   ([config expected mock-response]
    (let [actual-response (http/request config)]
      (is (boolean? (:success actual-response)) ":success isn't a boolean")
