@@ -20,7 +20,7 @@
 
 
 (defn complete-synch
-  [config]
+  [auth-config]
   (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
   (loop []
     (println "")
@@ -35,34 +35,29 @@
 
 
 (defn bravo
-  [config]
+  [auth-config]
   (println "You selected bravo."))
 
 
 (defn charlie
-  [config]
+  [auth-config]
   (println "You selected charlie."))
 
 
 (let [api-key (get-api-key)]
   (if (some? api-key)
-    (loop []
-      (println "Select an option:")
-      (println "(1) complete, synchronous")
-      (println "(2) bravo")
-      (println "(3) charlie")
-      (println "(0) EXIT")
-      (let [config {:api-key api-key}
-            choice (clojure.string/trim (read-line))]
-        (case choice
-          "1" (do (complete-synch config) (recur))
-          "2" (do (bravo config) (recur))
-          "3" (do (charlie config) (recur))
-          "0" (println "bye")
-          (do (println "Error: Invalid choice, please select again.")
-              (recur)))))))
-
-
-
-
-
+    (let [auth-config (ai/create-auth-config api-key)]
+      (loop []
+        (println "Select an option:")
+        (println "(1) complete, synchronous")
+        (println "(2) bravo")
+        (println "(3) charlie")
+        (println "(0) EXIT")
+        (let [choice (clojure.string/trim (read-line))]
+          (case choice
+            "1" (do (complete-synch auth-config) (recur))
+            "2" (do (bravo auth-config) (recur))
+            "3" (do (charlie auth-config) (recur))
+            "0" (println "bye")
+            (do (println "Error: Invalid choice, please select again.")
+                (recur))))))))
