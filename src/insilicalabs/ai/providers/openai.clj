@@ -1,7 +1,7 @@
 (ns insilicalabs.ai.providers.openai
   (:require
     [cheshire.core :as json]
-    [clj-http.client :as http]
+    [insilicalabs.ai.http :as http]
     [insilicalabs.ai.providers.sse-stream :as sse-stream]))
 
 (defn- create-context [context-or-text]
@@ -13,25 +13,24 @@
 
 (defn- complete-impl [config context]
   (let [stream (get config :stream false)
-        response
-        (http/request
-          (cond->
-            {:method           :post
-             :url              "https://api.openai.com/v1/chat/completions"
-             ;:debug            true
-             :throw-exceptions false
-             :content-type     :json
-             :headers          {"Authorization" (str "Bearer " (:openai-api-key config))}
-             :body             (json/generate-string
-                                 {:model    "gpt-4o"
-                                  :stream   stream
-                                  :messages context})}
-            stream (assoc :as :reader)))]
-    (if (http/success? response)
+        response (http/post
+                   (cond->
+                     {:url              "https://api.openai.com/v1/chat/completions"
+                      ;:debug            true
+                      :throw-exceptions false
+                      :content-type     :json
+                      :headers          {"Authorization" (str "Bearer " (:openai-api-key config))}
+                      :body             (json/generate-string
+                                          {:model    "gpt-4o"
+                                           :stream   stream
+                                           :messages context})}
+                     stream (assoc :as :reader)))]
+    (if (:success response)
       (cond-> response
-        true :body
-        (not stream) (json/parse-string keyword)
-        (not stream) (get-in [:choices 0 :message :content]))
+              true :response
+              true :body
+              (not stream) (json/parse-string keyword)
+              (not stream) (get-in [:choices 0 :message :content]))
       response)))
 
 (defn stream [config context-or-text consumer-fn]
