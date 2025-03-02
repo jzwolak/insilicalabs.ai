@@ -1,7 +1,10 @@
 (ns insilicalabs.ai.example
   (:require [clojure.java.io :as io]
-            [insilicalabs.ai.providers.openai :as ai]))
+            [insilicalabs.ai.providers.openai.auth :as auth]
+            [insilicalabs.ai.providers.openai.chat :as chat]))
 
+;; WARNING: this is a temporary file for experimentation and will not be kept
+;;
 ;; USAGE:
 ;;   (require '[insilicalabs.ai.example :as example] :reload)
 
@@ -29,7 +32,7 @@
       (cond
         (= choice "0") (println "Leaving 'completion, synchronous'")
         :else (do
-                (println ">> " (ai/complete config choice))
+                (println ">> " (chat/complete auth-config choice))
                 (println "")
                 (recur))))))
 
@@ -46,7 +49,7 @@
 
 (let [api-key (get-api-key)]
   (if (some? api-key)
-    (let [auth-config (ai/create-auth-config api-key)]
+    (let [auth-config (auth/create-auth-config api-key)]
       (loop []
         (println "Select an option:")
         (println "(1) complete, synchronous")

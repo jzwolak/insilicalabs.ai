@@ -1,31 +1,13 @@
-(ns insilicalabs.ai.providers.openai
+(ns insilicalabs.ai.providers.openai.chat
   (:require
     [cheshire.core :as json]
-    [insilicalabs.ai.http :as http]
-    [insilicalabs.ai.providers.sse-stream :as sse-stream]))
+    [insilicalabs.ai.providers.openai.http :as http]
+    [insilicalabs.ai.providers.openai.sse-stream :as sse-stream]))
 
 
 (def ^:const default-complete-model "gpt-4o")
 
 (def ^:const default-completions-url "https://api.openai.com/v1/chat/completions")
-
-
-(defn create-auth-config
-  "Creates an authentication configuration.
-
-  Use the form '[api-key]' if you do not belong to multiple organizations, or you are not using a legacy API user key.
-  Otherwise, use the form '[api-key api-proj api-org]'.
-
- - (create-auth-config api-key)                  → Accepts the string API key `api-key` and returns it as an auth config
-                                                   map.
- - (create-auth-config api-key api-proj api-org) → Accepts strings for  API key `api-key`, project `api-proj`, and
-                                                   organization `api-org` and returns them as an auth config map."
-  ([api-key]
-   {:api-key api-key})
-  ([api-key api-proj api-org]
-   {:api-key  api-key
-    :api-proj api-proj
-    :api-org  api-org}))
 
 
 (defn- create-context [context-or-text]
@@ -39,14 +21,12 @@
   (let [stream (get config :stream false)
         response (http/post
                    (cond->
-                     {:url              default-completions-url
-                      :throw-exceptions false
-                      :content-type     :json
-                      :headers          {"Authorization" (str "Bearer " (:api-key config))}
-                      :body             (json/generate-string
-                                          {:model    default-complete-model
-                                           :stream   stream
-                                           :messages context})}
+                     {:url     default-completions-url
+                      :headers {"Authorization" (str "Bearer " (:api-key config))}
+                      :body    (json/generate-string
+                                 {:model    default-complete-model
+                                  :stream   stream
+                                  :messages context})}
                      stream (assoc :as :reader)))]
     (if (:success response)
       (cond-> response

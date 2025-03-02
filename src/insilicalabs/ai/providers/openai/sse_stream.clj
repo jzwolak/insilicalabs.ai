@@ -1,4 +1,4 @@
-(ns insilicalabs.ai.providers.sse-stream
+(ns insilicalabs.ai.providers.openai.sse-stream
   (:require [cheshire.core :as json]
             [clojure.string :as str]))
 
