@@ -38,13 +38,12 @@
         response (http/post
                    (cond->
                      {:url     default-completions-url
-                      :headers {"Authorization" (str "Bearer " (:api-key config))}
+                      :headers (create-headers config)
                       :body    (json/generate-string
                                  {:model    default-complete-model
                                   :stream   stream
                                   :messages context})}
                      stream (assoc :as :reader)))]
-    (println "here " (create-headers config))               ;;todo testing
     (if (:success response)
       (cond-> response
               true :response
