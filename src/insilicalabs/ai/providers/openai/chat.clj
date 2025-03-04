@@ -10,11 +10,27 @@
 (def ^:const default-completions-url "https://api.openai.com/v1/chat/completions")
 
 
+(defn get-response-as-string
+  ([response])
+  ([response n]))
+
+
+(defn get-response-as-string-vector
+  [response])
+
+
 (defn- create-context [context-or-text]
   (cond
     (nil? context-or-text) []
     (string? context-or-text) [{:role "user" :content context-or-text}]
     :else context-or-text))
+
+
+(defn- create-headers
+  [config]
+  (cond-> {"Authorization" (str "Bearer " (:api-key config))}
+          (:api-org config) (assoc "OpenAI-Organization" (:api-org config))
+          (:api-proj config) (assoc "OpenAI-Project" (:api-proj config))))
 
 
 (defn- complete-impl [config context]
@@ -28,6 +44,7 @@
                                   :stream   stream
                                   :messages context})}
                      stream (assoc :as :reader)))]
+    (println "here " (create-headers config))               ;;todo testing
     (if (:success response)
       (cond-> response
               true :response
