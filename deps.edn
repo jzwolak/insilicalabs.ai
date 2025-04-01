@@ -1,10 +1,16 @@
 {:deps    {clj-http/clj-http {:mvn/version "3.12.3"}
            cheshire/cheshire {:mvn/version "5.10.0"}}
 
- ;; run tests with:
- ;;   clj -X:test
- ;; see: https://github.com/cognitect-labs/test-runner/
+ ;; RUNNING TESTS:
+ ;;   On the command line:
+ ;;      clj -X:test
+ ;;   See: https://github.com/cognitect-labs/test-runner/
+
+ ;; RUNNING EXAMPLES:
+ ;;   See documentation in example files at examples/insilicalabs/ai/examples.
+
  :aliases {:test {:extra-paths ["test"]
+                  :dev {:extra-paths ["examples"]}
                   :extra-deps  {io.github.cognitect-labs/test-runner
                                 {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
                   :main-opts   ["-m" "cognitect.test-runner"]

@@ -1,11 +1,13 @@
-(ns insilicalabs.ai.example
+(ns insilicalabs.ai.examples.example
   (:require [clojure.java.io :as io]
             [insilicalabs.ai.providers.openai.auth :as auth]
             [insilicalabs.ai.providers.openai.chat :as chat]))
 
-;; WARNING: this is a temporary file for experimentation and will not be kept
-;;
 ;; USAGE:
+;;   In REPL:
+;;     (load-file "examples/insilicalabs/ai/examples/example.clj")
+;;
+;; todo?
 ;;   (require '[insilicalabs.ai.example :as example] :reload)
 
 
