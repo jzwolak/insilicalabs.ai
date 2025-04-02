@@ -6,9 +6,6 @@
 ;; USAGE:
 ;;   In REPL:
 ;;     (load-file "examples/insilicalabs/ai/examples/example.clj")
-;;
-;; todo?
-;;   (require '[insilicalabs.ai.example :as example] :reload)
 
 
 (defn get-api-key-path
@@ -48,23 +45,23 @@
   (println "You selected bravo."))
 
 
-(defn charlie
+(defn todo
   [api-key-path]
-  (println "You selected charlie."))
+  (println "This method is not yet implemented."))
 
 
 (let [api-key-path (get-api-key-path)]
   (loop []
     (println "Select an option:")
-    (println "(1) complete, synchronous")
-    (println "(2) bravo")
+    (println "(1) complete, synchronous (blocking), non-stream")
+    (println "(2) complete, asynchronous (non-blocking), non-stream")
     (println "(3) charlie")
     (println "(0) EXIT")
     (let [choice (clojure.string/trim (read-line))]
       (case choice
         "1" (do (complete-synch api-key-path) (recur))
         "2" (do (bravo api-key-path) (recur))
-        "3" (do (charlie api-key-path) (recur))
+        "3" (do (todo api-key-path) (recur))
         "0" (println "bye")
         (do (println "Error: Invalid choice, please select again.")
             (recur))))))
