@@ -18,7 +18,7 @@
 ; The following fn only partially handles this at the moment but this should be enough for OpenAI and our OpenAI proxy,
 ; which is what it was created for.
 ;
-(defn read-sse-stream
+(defn read-sse-stream-old
   [reader handler-fn]
   (with-open [reader reader]
     (loop [data ""]
