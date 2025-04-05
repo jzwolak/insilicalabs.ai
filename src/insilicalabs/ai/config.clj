@@ -63,7 +63,9 @@
      :request-config  <request config>
      :response-config <response config>}
 
-  Map keys with values where the arguments are 'nil' or 'false' are omitted from the returned map.
+  Map keys with values where the arguments are 'nil' or 'false' are omitted from the returned map.  If the key `api-key`
+  was set in the `auth-config`, then that key is removed from the returned map; this is to help promote minimizing the
+  exposure of the key in memory.
 
   As these settings are likely to remain unchanged during the life the application, then consider creating this
   configuration once and preserving its value (vs. re-creating it with each request), perhaps as a constant."
@@ -73,7 +75,8 @@
    (create-config nil nil request-config response-config))
   ([auth-config http-config request-config response-config]
    (cond-> {}
-           (some? auth-config) (assoc :auth-config auth-config)
-           (some? http-config) (assoc :http-config http-config)
-           (some? request-config) (assoc :request-config request-config)
+           (some? auth-config)     (assoc :auth-config auth-config)
+           true                    (update-in dissoc [:auth-config] :api-key)
+           (some? http-config)     (assoc :http-config http-config)
+           (some? request-config)  (assoc :request-config request-config)
            (some? response-config) (assoc :response-config response-config))))

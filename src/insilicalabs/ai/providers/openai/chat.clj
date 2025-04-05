@@ -1,22 +1,27 @@
 (ns insilicalabs.ai.providers.openai.chat
   (:require
     [cheshire.core :as json]
-    [insilicalabs.ai.providers.openai.http :as http]
+    [insilicalabs.ai.http :as http]
     [insilicalabs.ai.providers.openai.sse-stream :as sse-stream]))
 
 
-(def ^:const default-completions-url "https://api.openai.com/v1/chat/completions")
+(def ^:const completions-url-default "https://api.openai.com/v1/chat/completions")
 
 
-(defn create-context
-  ([system-msg user-msg]
-   [{:role "system" :content system-msg}
-    {:role "user" :content user-msg}])
-  ([context system-msg user-msg]
-   (cond -> context
-         (nil? context) []
-         (some? system-msg) (conj {:role "system" :content system-msg})
-         (some? user-msg) (conj {:role "user" :content user-msg}))))
+(defn create-messages
+  ([messages-or-user-message]
+   (cond
+     (nil? messages-or-user-message) []
+     (string? messages-or-user-message) [{:role "user" :content messages-or-user-message}]
+     :else messages-or-user-message))
+  ([system-message user-message]
+   [{:role "system" :content system-message}
+    {:role "user" :content user-message}])
+  ([messages system-message user-message]
+   (cond -> messages
+         (nil? messages) []
+         (some? system-message) (conj {:role "system" :content system-message})
+         (some? user-message) (conj {:role "user" :content user-message}))))
 
 
 (defn- create-context-old [context-or-text]
@@ -35,18 +40,98 @@
   [response])
 
 
-(defn- create-headers
+;; todo: consideration
+;; auth-config -> removes :api-key
+;; request-config -> removes :stream, :messages
+;; only things that changes are (in actual request made later): api-key, messages
+(defn create-prepared-request
+  ([request-config]
+   (create-prepared-request {} {} request-config {}))
+  ([request-config response-config]
+   (create-prepared-request {} {} request-config response-config))
+  ([auth-config http-config request-config response-config]
+   (let [auth-config (dissoc auth-config :api-key)
+         request-config (cond-> request-config
+                                (dissoc :messages)
+                                (dissoc :stream))
+         stream (get response-config :stream false)
+         prepared-request (cond->
+                            {:url          completions-url-default
+                             :content-type :json
+                             :accept       :json}
+                            stream (assoc :as :reader)
+                            (some? (:socket-timeout http-config)) (assoc :socket-timeout (:socket-timeout http-config))
+                            (some? (:connection-timeout http-config)) (assoc :connection-timeout (:connection-timeout http-config)))
+         prepared-request {:prepared-request prepared-request
+                           :auth-config auth-config
+                           :request-config request-config}]  ;; todo: response-config
+     prepared-request)))
+
+
+(defn create-prepared-request-from-full-config
   [config]
-  (cond-> {"Authorization" (str "Bearer " (:api-key config))}
-          (:api-org config) (assoc "OpenAI-Organization" (:api-org config))
-          (:api-proj config) (assoc "OpenAI-Project" (:api-proj config))))
+  (let [{:keys [auth-config http-config request-config response-config]
+         :or   {auth-config {} http-config {} request-config {} response-config {}}}
+        config]
+    (create-prepared-request auth-config http-config request-config response-config)))
+
+
+(defn- create-headers
+  [auth-config]
+  (cond-> {"Authorization" (str "Bearer " (:api-key auth-config))}
+          (:api-org auth-config) (assoc "OpenAI-Organization" (:api-org auth-config))
+          (:api-proj auth-config) (assoc "OpenAI-Project" (:api-proj auth-config))))
+
+
+;; :auth-config
+;;   :api-key
+;;
+;; :request-config
+;;   :model
+;;   :messages
+;;
+;; :response-config
+;;   - rules around async and stream interaction?
+;;
+(defn- complete-impl
+  [config]
+  (let [{:keys [auth-config http-config request-config response-config]
+         :or   {auth-config {} http-config {} request-config {} response-config {}}}
+        config
+        request-config (dissoc request-config :stream)
+        stream (get response-config :stream false)
+        response (http/post
+                   (cond->
+                     {:url          completions-url-default
+                      :headers      (create-headers auth-config)
+                      :content-type :json
+                      :accept       :json
+                      :body         (json/generate-string request-config)}
+                     stream (assoc :as :reader)
+                     (some? (:socket-timeout http-config)) (assoc :socket-timeout (:socket-timeout http-config))
+                     (some? (:connection-timeout http-config)) (assoc :connection-timeout (:connection-timeout http-config))
+                     ))]
+    ))
+
+
+(defn complete
+  ([config api-key]
+   (complete-impl (assoc-in config [:auth-config :api-key] api-key)))
+  ([config api-key messages-or-user-message]
+   (complete-impl (cond-> config
+                          true (assoc-in [:auth-config :api-key] api-key)
+                          true (assoc-in [:request-config :messages] (create-messages messages-or-user-message)))))
+  ([config api-key messages user-message]
+   (complete-impl (cond-> config
+                          true (assoc-in [:auth-config :api-key] api-key)
+                          true (assoc-in [:request-config :messages] (conj messages {:role "user" :content user-message}))))))
 
 
 (defn- complete-impl-old [config context]
   (let [stream (get config :stream false)
         response (http/post
                    (cond->
-                     {:url     default-completions-url
+                     {:url     completions-url-default
                       :headers (create-headers config)
                       :body    (json/generate-string
                                  {:model    "gpt-4o"
