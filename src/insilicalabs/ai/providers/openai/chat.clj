@@ -5,44 +5,14 @@
     [insilicalabs.ai.providers.openai.sse-stream :as sse-stream]))
 
 
-(def ^:const completions-url-default "https://api.openai.com/v1/chat/completions")
+(def ^:const chat-completions-url-default "https://api.openai.com/v1/chat/completions")
 
 
-(defn create-messages
-  ([messages-or-user-message]
-   (cond
-     (nil? messages-or-user-message) []
-     (string? messages-or-user-message) [{:role "user" :content messages-or-user-message}]
-     :else messages-or-user-message))
-  ([system-message user-message]
-   [{:role "system" :content system-message}
-    {:role "user" :content user-message}])
-  ([messages system-message user-message]
-   (cond -> messages
-         (nil? messages) []
-         (some? system-message) (conj {:role "system" :content system-message})
-         (some? user-message) (conj {:role "user" :content user-message}))))
-
-
-(defn- create-context-old [context-or-text]
-  (cond
-    (nil? context-or-text) []
-    (string? context-or-text) [{:role "user" :content context-or-text}]
-    :else context-or-text))
-
-
-(defn get-response-as-string
-  ([response])
-  ([response n]))
-
-
-(defn get-response-as-string-vector
-  [response])
-
-
-;; todo: consideration
 ;; auth-config -> removes :api-key
 ;; request-config -> removes :stream, :messages
+;; :response-config
+;;   - rules around async and stream interaction?
+;;
 ;; only things that changes are (in actual request made later): api-key, messages
 (defn create-prepared-request
   ([request-config]
@@ -51,20 +21,22 @@
    (create-prepared-request {} {} request-config response-config))
   ([auth-config http-config request-config response-config]
    (let [auth-config (dissoc auth-config :api-key)
-         request-config (cond-> request-config
-                                (dissoc :messages)
-                                (dissoc :stream))
          stream (get response-config :stream false)
+         response-config (assoc response-config :stream stream)
+         request-config (cond-> request-config
+                                true (dissoc :messages)
+                                stream (assoc :stream stream))
          prepared-request (cond->
-                            {:url          completions-url-default
+                            {:url          chat-completions-url-default
                              :content-type :json
                              :accept       :json}
                             stream (assoc :as :reader)
                             (some? (:socket-timeout http-config)) (assoc :socket-timeout (:socket-timeout http-config))
                             (some? (:connection-timeout http-config)) (assoc :connection-timeout (:connection-timeout http-config)))
          prepared-request {:prepared-request prepared-request
-                           :auth-config auth-config
-                           :request-config request-config}]  ;; todo: response-config
+                           :auth-config      auth-config
+                           :request-config   request-config
+                           :response-config  response-config}] ;; todo: finish response-config
      prepared-request)))
 
 
@@ -83,55 +55,116 @@
           (:api-proj auth-config) (assoc "OpenAI-Project" (:api-proj auth-config))))
 
 
-;; :auth-config
-;;   :api-key
+(defn create-messages
+  ([system-message user-message]
+   (create-messages [] system-message user-message))
+  ([messages system-message user-message]
+   (cond-> messages
+           (nil? messages) []
+           (some? system-message) (conj {:role "system" :content system-message})
+           (some? user-message) (conj {:role "user" :content user-message}))))
+
+
+;; returns 'nil' if not successful
+(defn get-response-as-string
+  ([response]
+   (get-response-as-string response 0))
+  ([response n]
+   (get-in response [:response :body :choices n :message :content])))
+
+
+;; returns a vector
+;; returns empty vector if not successful
+(defn get-response-as-string-vector
+  [response]
+  (if-not (:success response)
+    []
+    (let [choices (get-in response [:response :body :choices])]
+      (doall (mapv #(get-in % [:message :content]) choices)))))
+
+
+(defn- create-context-old [context-or-text]
+  (cond
+    (nil? context-or-text) []
+    (string? context-or-text) [{:role "user" :content context-or-text}]
+    :else context-or-text))
+
+
+
+;; see 'complete'
+(defn- ^:impure complete-request-impl
+  [prepared-request]
+  (let [{:keys [auth-config request-config prepared-request]
+         :or   {auth-config {} request-config {} prepared-request {}}}
+        prepared-request
+        response (http/post
+                   (-> prepared-request
+                       (assoc :headers (create-headers auth-config))
+                       (assoc :body (json/generate-string request-config))))]
+    (assoc response :stream (get-in prepared-request [:request-config :stream]))))
+
+
+;; see 'complete'
+;; dissoc ':stream'?
+(defn- complete-response-impl
+  [response]
+  (let [response (dissoc response :stream)]
+    (if (:success response)
+      (let [response (if (:stream response)
+                       response
+                       (assoc-in response [:response :body] (json/parse-string (get-in response [:response :body]) keyword)))]
+        response)
+      response)))
+
+
+;; returns a response map with success=true/false response=<the full response>.  to help parse response, call
+;; 'get-response-as-string' or 'get-response-as-string-vector'.
 ;;
-;; :request-config
-;;   :model
-;;   :messages
+;; if NOT streaming (e.g., ':stream' set to 'true'), the [:response :body] has json keys converted to keywords, else not
 ;;
+;; to automatically update the context, use 'chat'
+;;
+;; REQUIRED:
+;; - :auth-config
+;;     :api-key
+;; - :request-config
+;;     :model
+;;     :messages
 ;; :response-config
 ;;   - rules around async and stream interaction?
-;;
-(defn- complete-impl
-  [config]
-  (let [{:keys [auth-config http-config request-config response-config]
-         :or   {auth-config {} http-config {} request-config {} response-config {}}}
-        config
-        request-config (dissoc request-config :stream)
-        stream (get response-config :stream false)
-        response (http/post
-                   (cond->
-                     {:url          completions-url-default
-                      :headers      (create-headers auth-config)
-                      :content-type :json
-                      :accept       :json
-                      :body         (json/generate-string request-config)}
-                     stream (assoc :as :reader)
-                     (some? (:socket-timeout http-config)) (assoc :socket-timeout (:socket-timeout http-config))
-                     (some? (:connection-timeout http-config)) (assoc :connection-timeout (:connection-timeout http-config))
-                     ))]
-    ))
+(defn ^:impure complete
+  ([prepared-request api-key messages-or-user-message]
+   (complete-response-impl (complete-request-impl (cond-> prepared-request
+                                                          true (assoc-in [:auth-config :api-key] api-key)
+                                                          true (assoc-in [:request-config :messages] (create-messages nil messages-or-user-message))))))
+  ([prepared-request api-key messages user-message]
+   (complete-response-impl (complete-request-impl (cond-> prepared-request
+                                                          true (assoc-in [:auth-config :api-key] api-key)
+                                                          true (assoc-in [:request-config :messages] (conj messages {:role "user" :content user-message})))))))
+
+;; same as complete, but adds 'user-message' and the response from the AI assistant to 'messages' and returns the response map with 'messages' key
+;; - and gets the 0th choice for the chat completion
+(defn ^:impure chat
+  [prepared-request api-key messages user-message]
+  (let [messages (or messages [])
+        completion (complete prepared-request api-key messages user-message)]
+    (if-not (:success completion)
+      completion
+      (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)})))))
 
 
-(defn complete
-  ([config api-key]
-   (complete-impl (assoc-in config [:auth-config :api-key] api-key)))
-  ([config api-key messages-or-user-message]
-   (complete-impl (cond-> config
-                          true (assoc-in [:auth-config :api-key] api-key)
-                          true (assoc-in [:request-config :messages] (create-messages messages-or-user-message)))))
-  ([config api-key messages user-message]
-   (complete-impl (cond-> config
-                          true (assoc-in [:auth-config :api-key] api-key)
-                          true (assoc-in [:request-config :messages] (conj messages {:role "user" :content user-message}))))))
+;; TODO next
+;; - some parts of response map are json keys (not clojure keywords)?  but don't convert [:response :body] if streaming
+;; - update example.clj
+;; - response handling: asynch, streaming, etc.
+
 
 
 (defn- complete-impl-old [config context]
   (let [stream (get config :stream false)
         response (http/post
                    (cond->
-                     {:url     completions-url-default
+                     {:url     chat-completions-url-default
                       :headers (create-headers config)
                       :body    (json/generate-string
                                  {:model    "gpt-4o"
@@ -174,7 +207,7 @@
    (let [context (create-context-old context-or-text)]
      (complete-impl-old config context))))
 
-(defn chat
+(defn chat-old
   "Hold a conversation by adding new user messages to the context and completing. This always returns the full context
   with user's new-message and chat completion."
   [config context new-message]

@@ -2,30 +2,7 @@
   (:require [clj-http.client :as http])
   (:import (java.io IOException)))
 
-; http config for http/request vs. http/post
-;
-; - varies per request
-;     - :body (json/generate-string
-;               {<model>
-;                <stream>>
-;                :messages context})})
-;
-; - generally the same per session
-;     - :headers <api token, project, etc.>
-;     - :body (json/generate-string
-;               {:model    "gpt-4o"
-;                :stream   stream
-;                <messages>})}
-;
-; - default
-;     - :url "https://api.openai.com/v1/chat/completions"
-;     - :method :post
-;     - :content-type :json
-;     - :accept :json
-;
-; - AI provider independent
-;     - :socket-timeout 1000      ;; in milliseconds
-;     - :connection-timeout 1000  ;; in milliseconds
+
 ;
 ; - advanced options (AI provider independent)
 ;     - :async? true
@@ -56,10 +33,6 @@
 ;   - asynch request/response, single response object
 ;   - stream: asynch, stream of response objects
 ;
-;; todo: doc
-;;   - http errors are not returned as exceptions
-;;   - non-empty cfg as map, method (get, post), url
-;;   - :debug true
 ;;
 ;; success     <boolean>
 ;; fail-point  <key, e.g. ':http-request'>

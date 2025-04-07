@@ -55,7 +55,10 @@
     (println "Select an option:")
     (println "(1) complete, synchronous (blocking), non-stream")
     (println "(2) complete, asynchronous (non-blocking), non-stream")
-    (println "(3) charlie")
+    (println "todo: streaming?")
+    (println "(3) chat, synchronous (blocking), non-stream")
+    (println "(4) chat, asynchronous (non-blocking), non-stream")
+    (println "todo: streaming?")
     (println "(0) EXIT")
     (let [choice (clojure.string/trim (read-line))]
       (case choice
