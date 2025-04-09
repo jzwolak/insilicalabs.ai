@@ -1,11 +1,11 @@
-(ns insilicalabs.ai.examples.example
+(ns insilicalabs.ai.examples.providers.openai.chat
   (:require [clojure.java.io :as io]
             [insilicalabs.ai.config :as config]
             [insilicalabs.ai.providers.openai.chat :as chat]))
 
 ;; USAGE:
 ;;   In REPL:
-;;     (load-file "examples/insilicalabs/ai/examples/example.clj")
+;;     (load-file "examples/insilicalabs/ai/examples/providers/openai/chat.clj")
 
 
 (def ^:const model-default "gpt-4o")

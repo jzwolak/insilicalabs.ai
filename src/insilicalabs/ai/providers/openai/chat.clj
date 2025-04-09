@@ -146,8 +146,9 @@
                                                           true (assoc-in [:auth-config :api-key] api-key)
                                                           true (assoc-in [:request-config :messages] (conj messages {:role "user" :content user-message})))))))
 
-;; same as complete, but adds 'user-message' and the response from the AI assistant to 'messages' and returns the response map with 'messages' key
-;; - and gets the 0th choice for the chat completion
+;; - same as complete, but adds 'user-message' and the response from the AI assistant to 'messages' and returns the response map with 'messages' key
+;;   - and gets the 0th choice for the chat completion
+;; - the user message is not saved in 'messages' if the request fails; and of course, there's no assistant message saved
 (defn ^:impure chat
   [prepared-request api-key messages user-message]
   (let [messages (or messages [])
