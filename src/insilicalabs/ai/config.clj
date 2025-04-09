@@ -20,11 +20,13 @@
 
 ;; todo: need to filter out some settings like stream?
 (defn create-http-config
+  []
   "
   todo
 
   As these settings are likely to remain unchanged during the life the application, then consider creating this
   configuration once and preserving its value (vs. re-creating it with each request), perhaps as a constant."
+  {}
   )
 
 
@@ -41,6 +43,7 @@
 
 ;; todo
 (defn create-response-config
+  []
   "
   todo
 
@@ -49,6 +52,7 @@
 
   As these settings are likely to remain unchanged during the life the application, then consider creating this
   configuration once and preserving its value (vs. re-creating it with each request), perhaps as a constant."
+  {}
   )
 
 ;; todo: filter out settings that the other configs are also filtering out?
@@ -76,7 +80,7 @@
   ([auth-config http-config request-config response-config]
    (cond-> {}
            (some? auth-config)     (assoc :auth-config auth-config)
-           true                    (update-in dissoc [:auth-config] :api-key)
+           true                    (true (dissoc auth-config :api-key))
            (some? http-config)     (assoc :http-config http-config)
            (some? request-config)  (assoc :request-config request-config)
            (some? response-config) (assoc :response-config response-config))))

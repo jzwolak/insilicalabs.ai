@@ -8,8 +8,13 @@
 (def ^:const chat-completions-url-default "https://api.openai.com/v1/chat/completions")
 
 
-;; auth-config -> removes :api-key
-;; request-config -> removes :stream, :messages
+;; auth-config
+;;   - removes :api-key
+;;
+;; request-config
+;;   - probably want to give :model
+;;   - removes :stream, :messages
+;;
 ;; :response-config
 ;;   - rules around async and stream interaction?
 ;;
@@ -74,11 +79,11 @@
 
 
 ;; returns a vector
-;; returns empty vector if not successful
+;; returns nil if not successful
 (defn get-response-as-string-vector
   [response]
   (if-not (:success response)
-    []
+    nil
     (let [choices (get-in response [:response :body :choices])]
       (doall (mapv #(get-in % [:message :content]) choices)))))
 
@@ -129,7 +134,6 @@
 ;;     :api-key
 ;; - :request-config
 ;;     :model
-;;     :messages
 ;; :response-config
 ;;   - rules around async and stream interaction?
 (defn ^:impure complete

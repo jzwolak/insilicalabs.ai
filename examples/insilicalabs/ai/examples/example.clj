@@ -1,11 +1,14 @@
 (ns insilicalabs.ai.examples.example
   (:require [clojure.java.io :as io]
-            [insilicalabs.ai.providers.openai.auth :as auth]
+            [insilicalabs.ai.config :as config]
             [insilicalabs.ai.providers.openai.chat :as chat]))
 
 ;; USAGE:
 ;;   In REPL:
 ;;     (load-file "examples/insilicalabs/ai/examples/example.clj")
+
+
+(def ^:const model-default "gpt-4o")
 
 
 (defn get-api-key-path
@@ -25,24 +28,57 @@
   (clojure.string/trim (slurp api-key-path)))
 
 
-(defn complete-synch
-  [api-key-path]
-  (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
-  (loop []
-    (println "")
-    (println "------------------------------------")
-    (let [choice (clojure.string/trim (read-line))]
-      (cond
-        (= choice "0") (println "Leaving 'completion, synchronous'")
-        :else (do
-                (println ">> " (chat/complete (auth/create-auth-config (get-api-key api-key-path)) choice))
-                (println "")
-                (recur))))))
+(defn print-error
+  [response]
+  (println "An error occurred while processing your request")
+  (println "  fail-point: " (:fail-point response))
+  (println "  reason    : " (:reason response))
+  (if (contains? response :exception)
+    (println "  exception : " (:exception response))))
 
 
-(defn bravo
+(defn complete-nonstream-synch
   [api-key-path]
-  (println "You selected bravo."))
+  (let [prepared-request (chat/create-prepared-request {:model model-default})
+        messages (chat/create-messages "You are a helpful assistant" nil)]
+    (loop []
+      (println "")
+      (println "Loop messages: " messages)
+      (println "")
+      (println "------------------------------------")
+      (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
+      (let [user-message (clojure.string/trim (read-line))]
+        (cond
+          (= user-message "0") (println "Leaving complete: non-streaming and synchronous (blocking)")
+          :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
+                  (println "")
+                  (if (:success response)
+                    (println (chat/get-response-as-string response))
+                    (print-error response))
+                  (recur)))))))
+
+
+(defn chat-nonstream-synch
+  [api-key-path]
+  (let [prepared-request (chat/create-prepared-request {:model model-default})]
+    (loop [messages (chat/create-messages "You are a helpful assistant" nil)]
+      (println "")
+      (println "Loop messages: " messages)
+      (println "")
+      (println "------------------------------------")
+      (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
+      (let [user-message (clojure.string/trim (read-line))]
+        (cond
+          (= user-message "0") (println "Leaving complete: non-streaming and synchronous (blocking)")
+          :else (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
+                  (println "")
+                  (if (:success response)
+                    (do
+                      (println (chat/get-response-as-string response))
+                      (recur (:messages response)))
+                    (do
+                      (print-error response)
+                      (recur messages)))))))))
 
 
 (defn todo
@@ -52,19 +88,41 @@
 
 (let [api-key-path (get-api-key-path)]
   (loop []
-    (println "Select an option:")
-    (println "(1) complete, synchronous (blocking), non-stream")
-    (println "(2) complete, asynchronous (non-blocking), non-stream")
-    (println "todo: streaming?")
-    (println "(3) chat, synchronous (blocking), non-stream")
-    (println "(4) chat, asynchronous (non-blocking), non-stream")
-    (println "todo: streaming?")
+    ;;
+    ;; complete
+    (println "")
+    (println "------------------------------------")
+    (println "complete:")
+    (println "  (1) non-streaming and synchronous (blocking)")
+    (println "  (2) non-streaming and asynchronous (non-blocking) todo")
+    (println "  (3) streaming and synchronous (blocking) todo")
+    (println "  (4) streaming and asynchronous (non-blocking) todo")
+    (println "")
+    ;;
+    ;; chat
+    (println "chat:")
+    (println "  (5) non-streaming and synchronous (blocking)")
+    (println "  (6) non-streaming and asynchronous (non-blocking) todo")
+    (println "  (7) streaming and synchronous (blocking) todo")
+    (println "  (8) streaming and asynchronous (non-blocking) todo")
+    (println "")
+    ;;
     (println "(0) EXIT")
     (let [choice (clojure.string/trim (read-line))]
       (case choice
-        "1" (do (complete-synch api-key-path) (recur))
-        "2" (do (bravo api-key-path) (recur))
+        ;;
+        ;; complete
+        "1" (do (complete-nonstream-synch api-key-path) (recur))
+        "2" (do (todo api-key-path) (recur))
         "3" (do (todo api-key-path) (recur))
+        "4" (do (todo api-key-path) (recur))
+        ;;
+        ;; chat
+        "5" (do (chat-nonstream-synch api-key-path) (recur))
+        "6" (do (todo api-key-path) (recur))
+        "7" (do (todo api-key-path) (recur))
+        "8" (do (todo api-key-path) (recur))
+        ;;
         "0" (println "bye")
         (do (println "Error: Invalid choice, please select again.")
             (recur))))))
