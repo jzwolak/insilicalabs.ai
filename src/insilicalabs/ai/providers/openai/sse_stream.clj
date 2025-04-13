@@ -15,7 +15,7 @@
 ;   field         = 1*name-char [ colon [ space ] *any-char ] end-of-line
 ;   end-of-line   = ( cr lf / cr / lf )
 ;
-; The following fn only partially handles this at the moment but this should be enough for OpenAI and our OpenAI proxy,
+; The following fn only partially handles this at the moment but this should be enough for OpenAI and an OpenAI proxy,
 ; which is what it was created for.
 ;
 (defn read-sse-stream-old

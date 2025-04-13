@@ -77,7 +77,8 @@
                     (try
                       (let [response (http/request config-final)]
                         (if (http/success? response)
-                          {:success true :response response}
+                          {:success true
+                           :response response}
                           {:success    false
                            :fail-point fail-point-http-request
                            :reason     (str "HTTP request failed. " (:reason-phrase response) " (" (:status response) ").")

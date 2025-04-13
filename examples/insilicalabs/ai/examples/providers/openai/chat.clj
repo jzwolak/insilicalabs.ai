@@ -6,6 +6,8 @@
 ;; USAGE:
 ;;   In REPL:
 ;;     (load-file "examples/insilicalabs/ai/examples/providers/openai/chat.clj")
+;;   If a file changes:
+;;     (require '[insilicalabs.ai.providers.openai.chat] :reload)
 
 
 (def ^:const model-default "gpt-4o")
@@ -30,7 +32,7 @@
 
 (defn print-error
   [response]
-  (println "An error occurred while processing your request")
+  (println "An error occurred while processing your request:")
   (println "  fail-point: " (:fail-point response))
   (println "  reason    : " (:reason response))
   (if (contains? response :exception)
@@ -52,6 +54,9 @@
           (= user-message "0") (println "Leaving complete: non-streaming and synchronous (blocking)")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
+                  (println "\n\n")
+                  (println response)                        ;; todo: debug
+                  (println "\n\n")
                   (if (:success response)
                     (println (chat/get-response-as-string response))
                     (print-error response))

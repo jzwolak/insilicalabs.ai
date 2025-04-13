@@ -1,11 +1,15 @@
 (ns insilicalabs.ai.providers.openai.chat
   (:require
+    [clojure.string :as str]
     [cheshire.core :as json]
     [insilicalabs.ai.http :as http]
     [insilicalabs.ai.providers.openai.sse-stream :as sse-stream]))
 
 
 (def ^:const chat-completions-url-default "https://api.openai.com/v1/chat/completions")
+
+(def ^:const fail-point-request-config :request-config)
+(def ^:const fail-point-request :request)
 
 
 ;; auth-config
@@ -70,6 +74,13 @@
            (some? user-message) (conj {:role "user" :content user-message}))))
 
 
+(defn create-messages-from-messages-or-user-message
+  [messages-or-user-message]
+  (if (string? messages-or-user-message)
+    (create-messages nil messages-or-user-message)
+    messages-or-user-message))
+
+
 ;; returns 'nil' if not successful
 (defn get-response-as-string
   ([response]
@@ -99,26 +110,66 @@
 ;; see 'complete'
 (defn- ^:impure complete-request-impl
   [prepared-request]
-  (let [{:keys [auth-config request-config prepared-request]
-         :or   {auth-config {} request-config {} prepared-request {}}}
-        prepared-request
+  (let [stream (get-in prepared-request [:request-config :stream])
+        {:keys [auth-config request-config prepared-request]
+         :or   {auth-config {} request-config {} prepared-request {}}} prepared-request
         response (http/post
                    (-> prepared-request
                        (assoc :headers (create-headers auth-config))
-                       (assoc :body (json/generate-string request-config))))]
-    (assoc response :stream (get-in prepared-request [:request-config :stream]))))
+                       (assoc :body (json/generate-string request-config))
+                       (dissoc :auth-config)
+                       (dissoc :request-config)
+                       (dissoc :response-config)))]
+    (assoc response :stream stream)))
 
 
+(defn- change-response-to-unsuccessful
+  [response fail-point reason]
+  (-> response
+      (assoc :success false)
+      (assoc :fail-point fail-point)
+      (assoc :reason reason)))
+
+
+(defn- check-response-errors
+  [response]
+  (let [finish-reason (get-in response [:response :finish_reason])]
+    (if (= finish-reason "length")
+      (change-response-to-unsuccessful response fail-point-request "Response stopped due to token limit being reached.")
+      (if (= finish-reason "content_filter")
+        (change-response-to-unsuccessful response fail-point-request "The response was blocked by the content filter for potentially sensitive or unsafe content.")
+        response))))
+
+
+;; normalizes string 'k' to kebab case and convert to keyword
+(defn normalize-string-to-kebab-keyword [k]
+  (-> k
+      name                                                  ; Convert keyword/symbol to string
+      (str/replace #"[_\s]" "-")                            ; Replace underscores or spaces with dashes
+      str/lower-case                                        ; Convert to lowercase
+      keyword))                                             ; Back to keyword
+
+
+(defn normalize-all-string-properties-to-kebab-keyword [headers]
+  (into {}
+        (map (fn [[k v]]
+               [(normalize-string-to-kebab-keyword k) v])
+             headers)))
+
+
+;; todo: convert headers/body to keyword if they exist (even if not successful)
+;; need to parse response before 'check-response-errors', because need to read the 'body'
 ;; see 'complete'
-;; dissoc ':stream'?
 (defn- complete-response-impl
   [response]
-  (let [response (dissoc response :stream)]
+  (let [response response]                                  ;; todo: need to convert response fr json to map? response (check-response-errors response)
     (if (:success response)
-      (let [response (if (:stream response)
-                       response
-                       (assoc-in response [:response :body] (json/parse-string (get-in response [:response :body]) keyword)))]
-        response)
+      (if (:stream response)
+        response                                            ;; stream should have similar: convert to map, error detection
+        (-> response                                        ;; todo: can simplify, if no other actions
+            (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
+            (assoc-in [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
+            ))
       response)))
 
 
@@ -138,13 +189,14 @@
 ;;   - rules around async and stream interaction?
 (defn ^:impure complete
   ([prepared-request api-key messages-or-user-message]
-   (complete-response-impl (complete-request-impl (cond-> prepared-request
-                                                          true (assoc-in [:auth-config :api-key] api-key)
-                                                          true (assoc-in [:request-config :messages] (create-messages nil messages-or-user-message))))))
+   (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
+         prepared-request (-> prepared-request
+                              (assoc-in [:auth-config :api-key] api-key)
+                              (assoc-in [:request-config :messages] messages))]
+     (complete-response-impl (complete-request-impl prepared-request))))
   ([prepared-request api-key messages user-message]
-   (complete-response-impl (complete-request-impl (cond-> prepared-request
-                                                          true (assoc-in [:auth-config :api-key] api-key)
-                                                          true (assoc-in [:request-config :messages] (conj messages {:role "user" :content user-message})))))))
+   (complete prepared-request api-key (conj messages {:role "user" :content user-message}))))
+
 
 ;; - same as complete, but adds 'user-message' and the response from the AI assistant to 'messages' and returns the response map with 'messages' key
 ;;   - and gets the 0th choice for the chat completion
