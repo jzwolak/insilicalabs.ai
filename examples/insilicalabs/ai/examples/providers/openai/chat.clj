@@ -42,7 +42,7 @@
 (defn complete-nonstream-synch
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})
-        messages (chat/create-messages "You are a helpful assistant" nil)]
+        messages (chat/create-messages "You are a helpful assistant." nil)]
     (loop []
       (println "")
       (println "Loop messages: " messages)
@@ -53,10 +53,6 @@
         (cond
           (= user-message "0") (println "Leaving complete: non-streaming and synchronous (blocking)")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
-                  (println "")
-                  (println "\n\n")
-                  (println response)                        ;; todo: debug
-                  (println "\n\n")
                   (if (:success response)
                     (println (chat/get-response-as-string response))
                     (print-error response))
@@ -66,7 +62,7 @@
 (defn chat-nonstream-synch
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})]
-    (loop [messages (chat/create-messages "You are a helpful assistant" nil)]
+    (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
       (println "")
       (println "Loop messages: " messages)
       (println "")
@@ -84,6 +80,30 @@
                     (do
                       (print-error response)
                       (recur messages)))))))))
+
+
+(defn complete-stream-synch
+  [api-key-path]
+  (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream true})
+        messages (chat/create-messages "You are a helpful assistant." nil)]
+    (loop []
+      (println "")
+      (println "Loop messages: " messages)
+      (println "")
+      (println "------------------------------------")
+      (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
+      (let [user-message (clojure.string/trim (read-line))]
+        (cond
+          (= user-message "0") (println "Leaving complete: streaming and synchronous (blocking)")
+          :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
+                  (println "")
+                  (println "\n\n")
+                  ;;(println response)                        ;; todo: debug
+                  (println "\n\n")
+                  (if (:success response)
+                    (println (chat/get-response-as-string response))
+                    (print-error response))
+                  (recur)))))))
 
 
 (defn todo
@@ -119,7 +139,7 @@
         ;; complete
         "1" (do (complete-nonstream-synch api-key-path) (recur))
         "2" (do (todo api-key-path) (recur))
-        "3" (do (todo api-key-path) (recur))
+        "3" (do (complete-stream-synch api-key-path) (recur))
         "4" (do (todo api-key-path) (recur))
         ;;
         ;; chat

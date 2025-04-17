@@ -19,26 +19,6 @@
 ; which is what it was created for.
 ;
 
-;; blocking read
-(defn read-sse-stream-block
-  [reader]
-  (with-open [reader reader]
-    (loop [data ""]
-      (let [line (.readLine reader)]
-        (cond
-          ; EOF
-          (nil? line) (do #_nothing #_stream-finished)
-          ; got data, append it and read next line
-          (.startsWith line "data: ") (recur (str data (.substring line 6)))
-          (.startsWith line "error: ") (throw (Exception. ^String (.substring line 6)))
-          ; end of event, call handler to do something with data
-          (str/blank? line) (when (not= "[DONE]" data)
-                              (let [json-value (json/parse-string data keyword)]
-                                (when (not= "stop" (get-in json-value [:choices 0 :finish_reason]))
-                                  (get-in json-value [:choices 0 :delta :content])
-                                  (recur ""))))
-          ; we ignore all other fields in the event
-          :else (recur data))))))
 
 
 (defn read-sse-stream-old

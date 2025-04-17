@@ -48,32 +48,32 @@
     (if (nil? config-in)
       {:success    false
        :fail-point fail-point-http-config
-       :reason     "Config can't be nil"}
+       :reason     "Config can't be nil."}
       (if (not (map? config-in))
         {:success    false
          :fail-point fail-point-http-config
-         :reason     "Config must be a map"}
+         :reason     "Config must be a map."}
         (if (empty? config-in)
           {:success    false
            :fail-point fail-point-http-config
-           :reason     "Config map cannot be empty"}
+           :reason     "Config map cannot be empty."}
           (let [config-final (merge http-request-config-mods config-in)]
             (if (not (contains? config-final :method))
               {:success    false
                :fail-point fail-point-http-config
-               :reason     "Config must contain the key ':method'"}
+               :reason     "Config must contain the key ':method'."}
               (if (not (#{:get :post} (:method config-final)))
                 {:success    false
                  :fail-point fail-point-http-config
-                 :reason     "The ':method' value in the config must be either ':get' or ':post'"}
+                 :reason     "The ':method' value in the config must be either ':get' or ':post'."}
                 (if (not (contains? config-final :url))
                   {:success    false
                    :fail-point fail-point-http-config
-                   :reason     "Config must contain a URL defined in ':url'"}
+                   :reason     "Config must contain a URL defined in ':url'."}
                   (if (not (string? (:url config-final)))
                     {:success    false
                      :fail-point fail-point-http-config
-                     :reason     "The ':url' value in the config must be a string"}
+                     :reason     "The ':url' value in the config must be a string."}
                     (try
                       (let [response (http/request config-final)]
                         (if (http/success? response)
@@ -105,12 +105,12 @@
                            :exception  e})))))))))))))
 
 
-;; todo docs / simple usage. reference docs in 'request'.
+;; todo docs / simple usage. reference docs in 'request'. tests.
 (defn ^:impure get
   [& configs]
   (request (apply merge http-get-config-mods configs)))
 
-;; todo docs / simple usage. reference docs in 'request'.
+;; todo docs / simple usage. reference docs in 'request'. tests.
 (defn ^:impure post
   [& configs]
   (request (apply merge http-post-config-mods configs)))

@@ -154,12 +154,17 @@
                [(normalize-string-to-kebab-keyword k) v])
              headers)))
 
+(defn simple-handler-fn
+  [data]
+  (println "handler-fn: " data))
 
 ;; - for both streaming and non-streaming
 ;;   - if headers exist, then converted to kebab keyword
 ;; - if non-streaming
 ;;   - and body exists, then parses json
 ;;   - checks for errors indicated in the body json
+;;
+;; - streaming requires a handler-fn
 ;;
 ;; see 'complete'
 (defn- complete-response
@@ -168,14 +173,14 @@
                    (assoc-in response [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
                    response)]
     (if (:stream response)
-      response                                              ;; todo: can't check for errors w/o parsing json?
+      (do
+        (println "\n\n DEBUG in stream---------------------")
+        (println response)
+        (println "\n\n -----------------end DEBUG in stream")
+        (sse-stream/read-sse-stream-old (get-in response [:response :body]) simple-handler-fn))
       (cond-> response
               (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
               true (check-response-errors)))))
-
-
-(defn- complete-response-streaming
-  [response])
 
 
 ;; returns a response map with success=true/false response=<the full response>.  to help parse response, call
@@ -200,9 +205,7 @@
                               (assoc-in [:request-config :messages] messages))
          stream (get-in prepared-request [:response-config :stream] false)
          response (complete-request prepared-request)]
-     (if stream
-       response                                             ;; todo - finish
-       (complete-response (assoc response :stream false)))))
+     (complete-response (assoc response :stream stream))))
   ([prepared-request api-key messages user-message]
    (complete prepared-request api-key (conj messages {:role "user" :content user-message}))))
 
