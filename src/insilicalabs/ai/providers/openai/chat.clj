@@ -108,19 +108,17 @@
 
 
 ;; see 'complete'
-(defn- ^:impure complete-request-impl
+(defn- ^:impure complete-request
   [prepared-request]
-  (let [stream (get-in prepared-request [:request-config :stream])
-        {:keys [auth-config request-config prepared-request]
-         :or   {auth-config {} request-config {} prepared-request {}}} prepared-request
-        response (http/post
-                   (-> prepared-request
-                       (assoc :headers (create-headers auth-config))
-                       (assoc :body (json/generate-string request-config))
-                       (dissoc :auth-config)
-                       (dissoc :request-config)
-                       (dissoc :response-config)))]
-    (assoc response :stream stream)))
+  (let [{:keys [auth-config request-config prepared-request]
+         :or   {auth-config {} request-config {} prepared-request {}}} prepared-request]
+    (http/post
+      (-> prepared-request
+          (assoc :headers (create-headers auth-config))
+          (assoc :body (json/generate-string request-config))
+          (dissoc :auth-config)
+          (dissoc :request-config)
+          (dissoc :response-config)))))
 
 
 (defn- change-response-to-unsuccessful
@@ -142,35 +140,42 @@
 
 
 ;; normalizes string 'k' to kebab case and convert to keyword
-(defn normalize-string-to-kebab-keyword [k]
+(defn- normalize-string-to-kebab-keyword [k]
   (-> k
-      name                                                  ; Convert keyword/symbol to string
-      (str/replace #"[_\s]" "-")                            ; Replace underscores or spaces with dashes
-      str/lower-case                                        ; Convert to lowercase
-      keyword))                                             ; Back to keyword
+      name
+      (str/replace #"[_\s]" "-")
+      str/lower-case
+      keyword))
 
 
-(defn normalize-all-string-properties-to-kebab-keyword [headers]
+(defn- normalize-all-string-properties-to-kebab-keyword [headers]
   (into {}
         (map (fn [[k v]]
                [(normalize-string-to-kebab-keyword k) v])
              headers)))
 
 
-;; todo: convert headers/body to keyword if they exist (even if not successful)
-;; need to parse response before 'check-response-errors', because need to read the 'body'
+;; - for both streaming and non-streaming
+;;   - if headers exist, then converted to kebab keyword
+;; - if non-streaming
+;;   - and body exists, then parses json
+;;   - checks for errors indicated in the body json
+;;
 ;; see 'complete'
-(defn- complete-response-impl
+(defn- complete-response
   [response]
-  (let [response response]                                  ;; todo: need to convert response fr json to map? response (check-response-errors response)
-    (if (:success response)
-      (if (:stream response)
-        response                                            ;; stream should have similar: convert to map, error detection
-        (-> response                                        ;; todo: can simplify, if no other actions
-            (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
-            (assoc-in [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
-            ))
-      response)))
+  (let [response (if (contains? (:response response) :headers)
+                   (assoc-in response [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
+                   response)]
+    (if (:stream response)
+      response                                              ;; todo: can't check for errors w/o parsing json?
+      (cond-> response
+              (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
+              true (check-response-errors)))))
+
+
+(defn- complete-response-streaming
+  [response])
 
 
 ;; returns a response map with success=true/false response=<the full response>.  to help parse response, call
@@ -192,8 +197,12 @@
    (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
          prepared-request (-> prepared-request
                               (assoc-in [:auth-config :api-key] api-key)
-                              (assoc-in [:request-config :messages] messages))]
-     (complete-response-impl (complete-request-impl prepared-request))))
+                              (assoc-in [:request-config :messages] messages))
+         stream (get-in prepared-request [:response-config :stream] false)
+         response (complete-request prepared-request)]
+     (if stream
+       response                                             ;; todo - finish
+       (complete-response (assoc response :stream false)))))
   ([prepared-request api-key messages user-message]
    (complete prepared-request api-key (conj messages {:role "user" :content user-message}))))
 
@@ -211,11 +220,7 @@
 
 
 ;; TODO next
-;; - some parts of response map are json keys (not clojure keywords)?  but don't convert [:response :body] if streaming
-;; - update example.clj
-;; - response handling: asynch, streaming, etc.
-
-
+;; -
 
 (defn- complete-impl-old [config context]
   (let [stream (get config :stream false)
