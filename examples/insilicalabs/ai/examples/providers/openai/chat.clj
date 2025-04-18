@@ -39,6 +39,11 @@
     (println "  exception : " (:exception response))))
 
 
+(defn streaming-handler-fn
+  [response]
+  (print (get-in response [:chunk-counter]) (chat/get-response-as-string response)))
+
+
 (defn complete-nonstream-synch
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})
@@ -84,7 +89,8 @@
 
 (defn complete-stream-synch
   [api-key-path]
-  (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream true})
+  (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream true
+                                                                               :handler-fn streaming-handler-fn})
         messages (chat/create-messages "You are a helpful assistant." nil)]
     (loop []
       (println "")
