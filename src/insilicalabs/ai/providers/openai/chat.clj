@@ -197,6 +197,10 @@
                true (check-response-errors))))))
 
 
+;; todo: handle json parse error
+;; todo: convert body to kebab case
+
+
 ;; returns a response map with success=true/false response=<the full response>.  to help parse response, call
 ;; 'get-response-as-string' or 'get-response-as-string-vector'.
 ;;
