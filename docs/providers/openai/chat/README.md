@@ -8,8 +8,8 @@ See [Open AI - Chat Completions API](https://platform.openai.com/docs/api-refere
 
 ## OpenAI Chat Completions API
 
-This section describes selected aspects of the OpenAI Chat Completions API as it relates to the `insilicalabs.ai` 
-library.
+This section describes selected aspects of the OpenAI Chat Completions API as it relates to the internals of the 
+`insilicalabs.ai` library.
 
 
 ### What does a request look like?
@@ -21,7 +21,7 @@ Requests for non-streaming and streaming cases appear below.
 
 A complete HTTP request to the OpenAI Chat Completions API appears below.
 
-```json
+```
 {:method :post, 
  :url https://api.openai.com/v1/chat/completions, 
  :content-type :json, 
@@ -48,8 +48,8 @@ Additional options are available such as setting the number of responses to gene
 randomness with `temperature`, setting the maximum number of tokens with `max_tokens`, etc.  See
 [Open AI - Chat Completions API](https://platform.openai.com/docs/api-reference/chat) for the full API  reference.
 
-Note that the key `:headers` contains the headers, including the API token, as a map using strings as keywords.  The 
-key `:body` contains the request data as stringified JSON.
+Note that the key `:headers` contains the headers, including the API token, as a map using strings as property names.  
+The property name `:body` contains the request data as stringified JSON.
 
 
 #### Streaming Request
@@ -66,7 +66,7 @@ request will generate one completion per request.
 A complete response, including the HTTP portion and the content (e.g., the HTTP payload), from the OpenAI Chat 
 Completions API appears below.  This example depicts a non-streaming response; a streaming response is discussed later.
 
-```json
+```
 {:cached nil, 
  :request-time 3089, 
  :repeatable? false, 
@@ -211,7 +211,7 @@ The `finish_reason` gives the reason that the model stopped generating.  See
 
 An example streaming response is below.
 
-```json
+```
 data: {
   "id": "chatcmpl-abc123",
   "object": "chat.completion.chunk",
@@ -325,33 +325,66 @@ The `insilicalabs.ai` library indicates a successful response only if:
 1. The `finish_reason` does not indicate an error, e.g. the `finish_reason` is not `length` or `content_filter`.  See
    [Finish Reason in Response](#finish-reason-in-response).
 
-todo: other cases, like with streaming?
-
 
 ### How to know if a streaming response is done generating?
-todo
+
+The request was accepted and model should start generating if the HTTP response code was `200`.
+
+The streaming request is done generating SUCCESSFULLY if a finish reason of `stop` is received (see 
+[Finish Reason in Response](#finish-reason-in-response)).  The terminal event `data: [DONE]` will also follow to
+indicate the end of the stream.
+
+The stream request is done generating UNSUCCESSFULLY if the finish reason is an error (see
+[Finish Reason in Response](#finish-reason-in-response) or if an exception occurs.  The `insilicalabs.ai` catches
+exceptions and returns a map with `:success` set to `false` if an exception or any other failure condition occurs.
 
 ### How should a response be parsed?
-todo
+
+Parsing [non-streaming](#how-should-a-non-streaming-response-be-parsed) vs. 
+[streaming](#how-should-a-streaming-response-be-parsed) responses is described below.
 
 #### How should a non-streaming response be parsed?
-todo
-- http response code
-- headers are string keys.  this library converts to kebab then keywords.
-- payload.  json parse, keys to keywords (already kebab?).
-- finish_reason
-- choices (might have more than 1)
+
+[What does a response look like?](#what-does-a-response-look-like) provides an example non-streaming response.
+
+Parse a non-streaming response by:
+1. If the HTTP response code was `200`, then the request was accepted and the model should start generating.  Even if a
+a generating failure occurred, then the HTTP response should contain a payload to process.
+1. Not necessary for parsing, but the `insilicalabs.ai` library converts the HTTP headers from string keys to 
+lowercased, kebab-formatted keywords
+1. Retreive the payload of the HTTP response at the key sequence location of `["choices" 0 "message" "content"]`.  If 
+the response contains multiple content choices, and it is desired to handle those, then select the choice(s) by 
+substituting the desired 0-based choice option as the 2nd argument in the key sequence.  In either case, the selected 
+choice represents the entirety of the response.
+1. Parse the string to JSON, such as using the [Chesire library](https://github.com/dakrone/cheshire) with 
+`(json/parse-string <payload> keyword)`.  The example parse statement converts JSON property names to keywords.
+1. Inspect the finish reason to check for success or failure.  See 
+[Finish Reason in Response](#finish-reason-in-response).
 
 
 #### How should a streaming response be parsed?
-todo
-- same as non-streaming: http response code, headers
-- data types, difference between SSE standard
-- accumulate data
-- parse json, keys to keywords.
-- finish_reason
-- content
-   - delta (unlike non-streaming)
-   - no choices like in non-streaming.  The n parameter (which controls how many completions to generate) is ignored in 
-     streaming mode. Even if you try to set n > 1, only n = 1 is honored in streaming.
-- 'DONE'
+
+See [What does a response look like?](#what-does-a-response-look-like) provides an example non-streaming response; the 
+HTTP portion (e.g., everything except for the payload in the `body` key applies here).  Then see 
+[Streaming Response](#streaming-response) for an example of streaming response payload.
+
+Parse a streaming response by:
+1. If the HTTP response code was `200`, then the request was accepted and the model should start generating.  Even if a
+   a generating failure occurred, then the subsequent HTTP response(s) should contain payloads to process.
+1. Not necessary for parsing, but the `insilicalabs.ai` library converts the HTTP headers from string keys to
+   lowercased, kebab-formatted keywords
+1. Accumulate lines until a blank line is encountered.
+   1. The content of the response is contained in the `content` property at the key sequence
+      `["choices" 0 "delta" "content"]`.  Unlike a non-streaming response, a streaming response cannot have more than one
+      choice; setting `n > 1` in a streaming request is ignored.
+   1. If an exception occurs while reading, then stop.  Note that the 
+      `insilicalabs.ai` library catches the exceptions and returns a map with `:success` equal to `false` in this case.
+1. Strip the `:data` prefix
+1. Concatenate the lines to form the full message
+1. Parse the full message as JSON, such as using the [Chesire library](https://github.com/dakrone/cheshire) with
+   `(json/parse-string <payload> keyword)`.  The example parse statement converts JSON property names to keywords.
+    1. If an exception occurs while parsing, then stop.  Note that the
+       `insilicalabs.ai` library catches the exceptions and returns a map with `:success` equal to `false` in this case.
+1. Inspect the finish reason to check for success or failure.  See
+[Finish Reason in Response](#finish-reason-in-response).  The last response, which may or may not have content, will 
+have a finish reason of `stop`.  The terminal event `data: [DONE]` will also follow to indicate the end of the stream.
