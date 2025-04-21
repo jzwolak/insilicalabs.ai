@@ -72,7 +72,6 @@ Completions API appears below.  This example depicts a non-streaming response; a
  :repeatable? false, 
  :protocol-version {:name HTTP, :major 1, :minor 1}, 
  :streaming? true, 
- :http-client #object[org.apache.http.impl.client.InternalHttpClient 0x67034f09 org.apache.http.impl.client.InternalHttpClient@67034f09], 
  :chunked? true, 
  :cookies {__cf_bm {:discard false, :domain api.openai.com, :expires #inst "2025-04-19T01:45:32.000-00:00", :path /, :secure true, :value <cookie value>, :version 0} }, 
  :reason-phrase OK, 
@@ -292,8 +291,8 @@ The content of the response is contained in the `content` property at the key se
 `["choices" 0 "delta" "content"]`.  Unlike a non-streaming response, a streaming response cannot have more than one 
 choice; setting `n > 1` in a streaming request is ignored.  
 
-Each data chunk can contain zero or more tokens, though it's common for the first chunk to contain zero tokens and 
-subsequent chunks to contain one token.
+Each data chunk can contain zero or more tokens, though it's common for the first and last chunks to contain zero tokens 
+and other chunks to contain one token.
 
 The `finish_reason` gives the reason that the model stopped generating.  See
 [Finish Reason in Response](#finish-reason-in-response) for an explanation of the `finish_reason`.
@@ -335,7 +334,7 @@ The streaming request is done generating SUCCESSFULLY if a finish reason of `sto
 indicate the end of the stream.
 
 The stream request is done generating UNSUCCESSFULLY if the finish reason is an error (see
-[Finish Reason in Response](#finish-reason-in-response) or if an exception occurs.  The `insilicalabs.ai` catches
+[Finish Reason in Response](#finish-reason-in-response)) or if an exception occurs.  The `insilicalabs.ai` catches
 exceptions and returns a map with `:success` set to `false` if an exception or any other failure condition occurs.
 
 ### How should a response be parsed?
@@ -349,9 +348,9 @@ Parsing [non-streaming](#how-should-a-non-streaming-response-be-parsed) vs.
 
 Parse a non-streaming response by:
 1. If the HTTP response code was `200`, then the request was accepted and the model should start generating.  Even if a
-a generating failure occurred, then the HTTP response should contain a payload to process.
+generating failure occurred, then the HTTP response should contain a payload to process.
 1. Not necessary for parsing, but the `insilicalabs.ai` library converts the HTTP headers from string keys to 
-lowercased, kebab-formatted keywords
+kebab-formatted keywords.
 1. Retreive the payload of the HTTP response at the key sequence location of `["choices" 0 "message" "content"]`.  If 
 the response contains multiple content choices, and it is desired to handle those, then select the choice(s) by 
 substituting the desired 0-based choice option as the 2nd argument in the key sequence.  In either case, the selected 
@@ -370,17 +369,17 @@ HTTP portion (e.g., everything except for the payload in the `body` key applies 
 
 Parse a streaming response by:
 1. If the HTTP response code was `200`, then the request was accepted and the model should start generating.  Even if a
-   a generating failure occurred, then the subsequent HTTP response(s) should contain payloads to process.
+   generating failure occurred, then the subsequent HTTP response(s) should contain payloads to process.
 1. Not necessary for parsing, but the `insilicalabs.ai` library converts the HTTP headers from string keys to
-   lowercased, kebab-formatted keywords
+   kebab-formatted keywords.
 1. Accumulate lines until a blank line is encountered.
    1. The content of the response is contained in the `content` property at the key sequence
       `["choices" 0 "delta" "content"]`.  Unlike a non-streaming response, a streaming response cannot have more than one
       choice; setting `n > 1` in a streaming request is ignored.
    1. If an exception occurs while reading, then stop.  Note that the 
       `insilicalabs.ai` library catches the exceptions and returns a map with `:success` equal to `false` in this case.
-1. Strip the `:data` prefix
-1. Concatenate the lines to form the full message
+1. Strip the `:data` prefix.
+1. Concatenate the lines to form the full message.
 1. Parse the full message as JSON, such as using the [Chesire library](https://github.com/dakrone/cheshire) with
    `(json/parse-string <payload> keyword)`.  The example parse statement converts JSON property names to keywords.
     1. If an exception occurs while parsing, then stop.  Note that the

@@ -75,7 +75,7 @@
                      :fail-point fail-point-http-config
                      :reason     "The ':url' value in the config must be a string."}
                     (try
-                      (let [response (http/request config-final)]
+                      (let [response (dissoc (http/request config-final) :http-client)]
                         (if (http/success? response)
                           {:success true
                            :response response}
