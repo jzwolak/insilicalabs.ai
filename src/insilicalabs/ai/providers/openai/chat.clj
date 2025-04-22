@@ -198,23 +198,65 @@
 
 
 ;; todo: handle json parse error
-;; todo: convert body to kebab case
+;; todo: body (content/payload) NOT converted to kebab case to preserve OpenAI format (todo: update README)
 
-
-;; returns a response map with success=true/false response=<the full response>.  to help parse response, call
-;; 'get-response-as-string' or 'get-response-as-string-vector'.
+;; - Does one chat completion (does not store and reference previous completions).  To store and reference previous
+;; completions, use 'chat'.
 ;;
-;; if NOT streaming (e.g., ':stream' set to 'true'), the [:response :body] has json keys converted to keywords, else not
+;; - Consider using 'create-prepared-request' to create a prepared request.
 ;;
-;; to automatically update the context, use 'chat'
+;; - Required:
+;;   - :auth-config
+;;     - :api-key is overwritten if set
+;;   - :request-config
+;;     - :url
+;;     - :model
+;;     - supports request API from OpenAI, but can't set streaming here, do in :response-config.  Per OpenAI API, 'n'
+;;       is ignored for streaming.
+;;   - :response-config
+;;     - rules around async and stream interaction?
 ;;
-;; REQUIRED:
-;; - :auth-config
-;;     :api-key
-;; - :request-config
-;;     :model
-;; :response-config
-;;   - rules around async and stream interaction?
+;; - To stream:
+;;   - in :response-config, set handler fn in :handler-fn.  that receives all info, including errs.
+;;
+;; - Returns on success a map such that:
+;;   - :success = true
+;;   - :response = original HTTP response that includes keywords such as:
+;;     - :status
+;;     - :reason-phrase
+;;     - :headers -- headers converted from string property names to kebab case keywords
+;;     - :protocol-version
+;;     - :body -- json parsed with string property names converted to keywords.  NOT explicitly kebab case to preserve OpenAI API.
+;;   - :stream = true/false if streaming or not
+;;   - :stream-end = true/false if stream has ended or not; only set if streaming
+;;   - :chunk-counter = int count of chunk; only set if streaming
+;;
+;; - To get content, use 'get-response-as-string' or 'get-response-as-string-vector'
+;;   - For non-streaming, the first content at key sequence [:response :choices 0 :message :content].  Note that
+;;     :choices is vector, could be more than 1 if n > 1 in request.
+;;   - For streaming, content at key sequence [:response :choices 0 :delta :content].  There's only 1 choice since streaming
+;;     does not respect n in request.
+;;
+;; - Returns on failure a map such that:
+;;   - :success = false
+;;   - :fail-point = where the request failed with values of :http-config, :http-request, TODO: :request-config, :request
+;;   - :reason = string reason for the failure
+;;   - :exception = the exception obj; only set if an exception occurred
+;;   - :response = original HTTP response, if set, that includes keywords such as:
+;;     - :status
+;;     - :reason-phrase
+;;     - :headers -- headers converted from string property names to kebab case keywords
+;;     - :protocol-version
+;;     - :body -- json parsed with string property names converted to keywords.  NOT explicitly kebab case to preserve OpenAI API.
+;;     - :stream = true/false if streaming or not
+;;     - :stream-end = true/false if stream has ended or not; only set if streaming
+;;     - :chunk-counter = int count of chunk; only set if streaming
+;;   - :stream = true/false if streaming or not
+;;   - :stream-end = true/false if stream has ended or not; only set if streaming
+;;   - :chunk-counter = int count of chunk; only set if streaming
+;;
+;; - Does not throw exceptions.  All exceptions are captured and returned as maps with :success = false.
+;;
 (defn ^:impure complete
   ([prepared-request api-key messages-or-user-message]
    (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
@@ -239,9 +281,6 @@
       completion
       (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)})))))
 
-
-;; TODO next
-;; -
 
 (defn- complete-impl-old [config context]
   (let [stream (get config :stream false)
