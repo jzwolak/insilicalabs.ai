@@ -20,18 +20,21 @@
 ;
 
 
+;; adds:
+;;   - :chunk-num
+;;   - :stream-end
 (defn read-sse-stream
   [reader response handler-fn handler-config fail-point]
   (with-open [reader reader]
     (loop [data ""
            message-accumulator ""
-           chunk-counter 0]
+           chunk-num 0]
       (let [line (.readLine reader)]
         (cond
           ; EOF
           (nil? line) (do #_nothing #_stream-finished)
           ; got data, append it and read next line
-          (.startsWith line "data: ") (recur (str data (.substring line 6)) message-accumulator chunk-counter)
+          (.startsWith line "data: ") (recur (str data (.substring line 6)) message-accumulator chunk-num)
           (.startsWith line "error: ") (throw (Exception. ^String (.substring line 6)))
           ; end of event, call handler to do something with data
           (str/blank? line) (when (not= "[DONE]" data)
@@ -41,12 +44,12 @@
                                   (let [chunk-data (get-in json-value [:choices 0 :delta :content])]
                                     (handler-fn (-> response
                                                     (assoc-in [:response :body :delta] chunk-data)
-                                                    (assoc :chunk-counter chunk-counter)
+                                                    (assoc :chunk-num chunk-num)
                                                     (assoc :stream-end false))
                                                 handler-config)
-                                    (recur "" (str message-accumulator chunk-data) (inc chunk-counter))))))
+                                    (recur "" (str message-accumulator chunk-data) (inc chunk-num))))))
           ; we ignore all other fields in the event
-          :else (recur data message-accumulator chunk-counter))))))
+          :else (recur data message-accumulator chunk-num))))))
 
 
 (defn read-sse-stream-old

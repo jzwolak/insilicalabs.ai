@@ -45,7 +45,7 @@
          prepared-request {:prepared-request prepared-request
                            :auth-config      auth-config
                            :request-config   request-config
-                           :response-config  response-config}] ;; todo: finish response-config
+                           :response-config  response-config}]
      prepared-request)))
 
 
@@ -197,15 +197,12 @@
                true (check-response-errors))))))
 
 
-;; todo: handle json parse error
-;; todo: body (content/payload) NOT converted to kebab case to preserve OpenAI format (todo: update README)
-
 ;; - Does one chat completion (does not store and reference previous completions).  To store and reference previous
 ;; completions, use 'chat'.
 ;;
 ;; - Consider using 'create-prepared-request' to create a prepared request.
 ;;
-;; - Required:
+;; - prepared-request:
 ;;   - :auth-config
 ;;     - :api-key is overwritten if set
 ;;   - :request-config
@@ -214,7 +211,8 @@
 ;;     - supports request API from OpenAI, but can't set streaming here, do in :response-config.  Per OpenAI API, 'n'
 ;;       is ignored for streaming.
 ;;   - :response-config
-;;     - rules around async and stream interaction?
+;;     - set :handler-fn for response to go to a handler function; one is required for streaming
+;;     - set :stream=true for streaming else :stream=false or not set for non-streaming
 ;;
 ;; - To stream:
 ;;   - in :response-config, set handler fn in :handler-fn.  that receives all info, including errs.
@@ -239,7 +237,7 @@
 ;;
 ;; - Returns on failure a map such that:
 ;;   - :success = false
-;;   - :fail-point = where the request failed with values of :http-config, :http-request, TODO: :request-config, :request
+;;   - :fail-point = where the request failed with values of :http-config, :http-request
 ;;   - :reason = string reason for the failure
 ;;   - :exception = the exception obj; only set if an exception occurred
 ;;   - :response = original HTTP response, if set, that includes keywords such as:
@@ -248,12 +246,11 @@
 ;;     - :headers -- headers converted from string property names to kebab case keywords
 ;;     - :protocol-version
 ;;     - :body -- json parsed with string property names converted to keywords.  NOT explicitly kebab case to preserve OpenAI API.
-;;     - :stream = true/false if streaming or not
-;;     - :stream-end = true/false if stream has ended or not; only set if streaming
-;;     - :chunk-counter = int count of chunk; only set if streaming
 ;;   - :stream = true/false if streaming or not
 ;;   - :stream-end = true/false if stream has ended or not; only set if streaming
-;;   - :chunk-counter = int count of chunk; only set if streaming
+;;   - :chunk-num = int count of chunk; only set if streaming
+;;
+;; todo: streaming keys set if err? depends on err?
 ;;
 ;; - Does not throw exceptions.  All exceptions are captured and returned as maps with :success = false.
 ;;
@@ -270,7 +267,7 @@
    (complete prepared-request api-key (conj messages {:role "user" :content user-message}))))
 
 
-;; - same as complete, but adds 'user-message' and the response from the AI assistant to 'messages' and returns the response map with 'messages' key
+;; - same as complete, but adds 'user-message' and the response from the AI assistant to ':messages' and returns the response map with 'messages' key
 ;;   - and gets the 0th choice for the chat completion
 ;; - the user message is not saved in 'messages' if the request fails; and of course, there's no assistant message saved
 (defn ^:impure chat

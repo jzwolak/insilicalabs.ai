@@ -43,22 +43,31 @@ A complete HTTP request to the OpenAI Chat Completions API appears below.
 }
 ```
 
-A request, at a minimum, must define the `model` property and provide at least one message in the `messages` property.
-Additional options are available such as setting the number of responses to generate with `n`, controlling the 
-randomness with `temperature`, setting the maximum number of tokens with `max_tokens`, etc.  See
+A request, at a minimum, must define:
+1. For the HTTP portion:
+   1. the HTTP method in the `:method` key, which is always `:post` 
+   1. the URL in the `:url` key
+   1. the API key and any related information in the `:headers` key
+   1. the OpenAI request itself as stringified JSON in the `:body` key
+1. For the OpenAI request (which is stringified JSON):
+   1. the model in the `model` property
+   1. at least one message in the `messages` property
+
+Additional options are available in the OpenAI request such as setting the number of responses to generate with `n`, 
+controlling the randomness with `temperature`, setting the maximum number of tokens with `max_tokens`, etc.  See
 [Open AI - Chat Completions API](https://platform.openai.com/docs/api-reference/chat) for the full API  reference.
 
-Note that the key `:headers` contains the headers, including the API token, as a map using strings as property names.  
-The property name `:body` contains the request data as stringified JSON.
-
+The `insilicalabs.ai` library handles the building of the request.
 
 #### Streaming Request
 
-A streaming request looks the same as the non-streaming request with the addition of `"stream": true` as a top-level
+A streaming request looks the same as the non-streaming request with the addition of `stream: true` as a top-level
 key-value pair in the stringified JSON request data.
 
 Note that a streaming request ignores the `n` parameter, which controls how many completions to generate.  A streaming
 request will generate one completion per request.
+
+As with the non-streaming request, the `insilicalabs.ai` library handles the building of the streaming request as well.
 
 
 ### What does a response look like?
@@ -384,6 +393,12 @@ Parse a streaming response by:
    `(json/parse-string <payload> keyword)`.  The example parse statement converts JSON property names to keywords.
     1. If an exception occurs while parsing, then stop.  Note that the
        `insilicalabs.ai` library catches the exceptions and returns a map with `:success` equal to `false` in this case.
-1. Inspect the finish reason to check for success or failure.  See
+1. Inspect the finish reason to check for success/failure or completion condition.  See
 [Finish Reason in Response](#finish-reason-in-response).  The last response, which may or may not have content, will 
 have a finish reason of `stop`.  The terminal event `data: [DONE]` will also follow to indicate the end of the stream.
+   1. If successful 
+      1. and contains content, then return that content
+      1. and does not contain content
+         1. and is not a stop condition, then continue reading
+         1. and is a stop condition, then stop reading
+   1. If not successful, the stop reading and return a failure 
