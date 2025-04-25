@@ -301,7 +301,8 @@ The content of the response is contained in the `content` property at the key se
 choice; setting `n > 1` in a streaming request is ignored.  
 
 Each data chunk can contain zero or more tokens, though it's common for the first and last chunks to contain zero tokens 
-and other chunks to contain one token.
+and other chunks to contain one token.  A token could be several words and/or punctuation marks, but it's common for a 
+token to consist only of a word, part of a word, or a single punctuation mark.
 
 The `finish_reason` gives the reason that the model stopped generating.  See
 [Finish Reason in Response](#finish-reason-in-response) for an explanation of the `finish_reason`.

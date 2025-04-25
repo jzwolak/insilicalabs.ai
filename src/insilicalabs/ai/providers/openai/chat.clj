@@ -81,26 +81,38 @@
     messages-or-user-message))
 
 
-;; for streaming, can't use [response n] form
-;; returns 'nil' if not successful
+;; - returns content as a string
+;; - if response is not successful, returns nil
+;; - if no content, returns nil
+;;   - for streaming
+;;     - possible that the 'delta' didn't have content, such as first and last chunks
+;;     - will not have multiple choices, so n = 0 always
 (defn get-response-as-string
   ([response]
-   (if (:stream response)
-     (get-in response [:response :body :delta])
-     (get-response-as-string response 0)))
+   (get-response-as-string response 0))
   ([response n]
-   (get-in response [:response :body :choices n :message :content])))
+   (if-not (:success response)
+     nil
+     (if (:stream response)
+       (get-in response [:response :data :choices n :delta :content])
+       (get-in response [:response :body :choices n :message :content])))))
 
 
-;; can't use for streaming
-;; returns a vector
-;; returns nil if not successful
+;; - returns a vector of content choices as strings
+;;   - streaming will have max 1 choice
+;;   - if streaming delta content is not present, then returns empty vector
+;; - if response is not successful, returns nil
 (defn get-response-as-string-vector
   [response]
   (if-not (:success response)
     nil
-    (let [choices (get-in response [:response :body :choices])]
-      (doall (mapv #(get-in % [:message :content]) choices)))))
+    (if (:stream response)
+      (let [delta-content (get-in response [:response :data :choices 0 :delta :content])]
+        (if (nil? delta-content)
+          []
+          [delta-content]))
+      (let [choices (get-in response [:response :body :choices])]
+        (doall (mapv #(get-in % [:message :content]) choices))))))
 
 
 (defn- create-context-old [context-or-text]

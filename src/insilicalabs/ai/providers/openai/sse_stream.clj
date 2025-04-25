@@ -19,11 +19,57 @@
 ; which is what it was created for.
 ;
 
+;; todo: indicate end of stream, probably just use finish_reason = stop
+;;
+;; Recovers lines comprising a JSON object starting with 'data:', stopping on '[DONE]' and erroring on 'error:'.
+;; Parses the JSON, checks finish_reason:
+;;   - stops on 'stop'
+;;   - otherwise:
+;;     - parses JSON
+;;     - puts the parsed JSON at [:response :data]
+;;
+;; adds:
+;;   - :chunk-num
+;;   - :stream-end
+;;
+;; see notes in readme
+;;
+(defn read-sse-stream
+  [reader response handler-fn handler-config fail-point]
+  (with-open [reader reader]
+    (loop [data ""
+           message-accumulator ""
+           chunk-num 0]
+      (let [line (.readLine reader)]
+        (cond
+          ; EOF
+          (nil? line) (do #_nothing #_stream-finished)
+          ; got data, append it and read next line
+          (.startsWith line "data: ") (recur (str data (.substring line 6)) message-accumulator chunk-num)
+          (.startsWith line "error: ") (throw (Exception. ^String (.substring line 6)))
+          ; end of event, call handler to do something with data
+          (str/blank? line) (when (not= "[DONE]" data)
+                              (let [chunk-json (json/parse-string data keyword)
+                                    finish-reason (get-in chunk-json [:choices 0 :finish_reason])]
+                                (when (not= "stop" finish-reason)
+                                  (let [chunk-content (get-in chunk-json [:choices 0 :delta :content])
+                                        updated-message-accumulator (if (some? chunk-content)
+                                                                      (str message-accumulator chunk-content)
+                                                                      message-accumulator)]
+                                    (handler-fn (-> response
+                                                    (assoc-in [:response :data] chunk-json)
+                                                    (assoc :chunk-num chunk-num)
+                                                    (assoc :stream-end false))
+                                                handler-config)
+                                    (recur "" updated-message-accumulator (inc chunk-num))))))
+          ; we ignore all other fields in the event
+          :else (recur data message-accumulator chunk-num))))))
+
 
 ;; adds:
 ;;   - :chunk-num
 ;;   - :stream-end
-(defn read-sse-stream
+(defn read-sse-stream-old1
   [reader response handler-fn handler-config fail-point]
   (with-open [reader reader]
     (loop [data ""

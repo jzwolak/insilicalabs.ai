@@ -44,7 +44,9 @@
 
 (defn streaming-handler-fn
   [response]
-  (print (get-in response [:chunk-num]) (chat/get-response-as-string response)))
+  ;;(println "\n\n" response)
+  ;;(println (get-in response [:chunk-num]) ":" (chat/get-response-as-string response))
+  (print (chat/get-response-as-string response)))
 
 
 (defn complete-nonstream
@@ -87,12 +89,6 @@
           (= user-message "0") (println "Leaving complete: streaming and synchronous (blocking)")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
-                  (println "\n\n")                          ;; todo: debug
-                  (println response)                        ;; todo: debug
-                  (println "\n\n")                          ;; todo: debug
-                  (if (:success response)
-                    (println (chat/get-response-as-string response))
-                    (print-error response))
                   (recur)))))))
 
 
