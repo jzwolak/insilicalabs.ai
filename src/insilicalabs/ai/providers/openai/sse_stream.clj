@@ -42,6 +42,10 @@
 ;;   - :stream-end = true/false
 ;;   - :paused = true/false
 ;;     - :reason = reason paused (only present if paused=true; also used if success=false)
+;;   - :message = string full message, only if finish_reason=true
+;;
+;; if successful finish_reason=stop, then return to the caller a map with :message=accumuleated messages (along with
+;; typical full map, see below in "stop".).  else nil.
 ;;
 ;; see notes in readme
 ;;
@@ -75,9 +79,16 @@
                                 (cond
                                   (= "length" finish-reason) (handler-fn (update-error-response response "Response stopped due to token limit being reached.") handler-config)
                                   (= "content_filter" finish-reason) (handler-fn (update-error-response response "The response was blocked by the content filter for potentially sensitive or unsafe content.") handler-config)
-                                  (= "stop" finish-reason) (handler-fn (-> response
-                                                                           (assoc :stream-end true)
-                                                                           (assoc :paused false)) handler-config)
+                                  (= "stop" finish-reason) (do
+                                                             (handler-fn (-> response
+                                                                             (assoc :stream-end true)
+                                                                             (assoc :paused false)
+                                                                             (assoc :message updated-message-accumulator)) handler-config)
+                                                             {:success true
+                                                              :stream true
+                                                              :stream-end true
+                                                              :paused false
+                                                              :message updated-message-accumulator})
                                   (= "tool_calls" finish-reason) (do
                                                                    (handler-fn (-> response
                                                                                    (assoc :stream-end false)

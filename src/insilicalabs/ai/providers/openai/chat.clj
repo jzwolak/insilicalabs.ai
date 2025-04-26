@@ -103,6 +103,7 @@
          content)))))
 
 
+;; todo: parity with `get-response-as-string`, any non-content should be empty string and not nil
 ;; - returns a vector of content choices as strings
 ;;   - streaming will have max 1 choice
 ;;   - if streaming delta content is not present, then returns empty vector
@@ -284,16 +285,23 @@
    (complete prepared-request api-key (conj messages {:role "user" :content user-message}))))
 
 
-;; - same as complete, but adds 'user-message' and the response from the AI assistant to ':messages' and returns the response map with 'messages' key
+;; - same as complete, but adds 'user-message' and the response from the AI assistant to ':messages' and returns the response map with ':messages' key
 ;;   - and gets the 0th choice for the chat completion
 ;; - the user message is not saved in 'messages' if the request fails; and of course, there's no assistant message saved
+;; - successful message with finish_reason=stop for streaming returns data for the chat messages.  all other cases return nil.
 (defn ^:impure chat
   [prepared-request api-key messages user-message]
   (let [messages (or messages [])
         completion (complete prepared-request api-key messages user-message)]
     (if-not (:success completion)
       completion
-      (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)})))))
+      (if (:stream completion)
+        (let [message (:message completion)
+              messages (conj messages {:role "user" :content user-message} {:role "assistant" :content message})]
+          (-> completion
+              (dissoc :message)
+              (assoc :messages messages)))
+        (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)}))))))
 
 
 (defn- complete-impl-old [config context]

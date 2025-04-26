@@ -55,41 +55,52 @@
         messages (chat/create-messages "You are a helpful assistant." nil)]
     (loop []
       (println "")
-      (println "Loop messages: " messages)                  ;; todo: debug
-      (println "")                                          ;; todo: debug
-      (println "------------------------------------")
-      (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
+      (println "LOOP MESSAGES------------------------------------------------------------------")
+      (println messages)
+      (println "------------------------------------------------------------------LOOP MESSAGES")
+      (println "")
+      (println "PROMPT------------------------------------------------------------------")
+      (println "Enter text to send for a non-streaming complete, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving complete: non-streaming and synchronous (blocking)")
+          (= user-message "0") (println "Leaving non-streaming complete")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
-                  (println "")
-                  (println "\n\n")                          ;; todo: debug
-                  (println response)                        ;; todo: debug
-                  (println "\n\n")                          ;; todo: debug
+                  (println "\n\n")
+                  (println "RAW RESPONSE------------------------------------------------------------------")
+                  (println response)
+                  (println "------------------------------------------------------------------RAW RESPONSE")
+                  (println "\n\n")
                   (if (:success response)
-                    (println (chat/get-response-as-string response))
+                    (do
+                      (println "FORMATTED RESPONSE--------------------------------------------------------")
+                      (println (chat/get-response-as-string response)))
                     (print-error response))
                   (recur)))))))
 
 
 (defn complete-stream
   [api-key-path]
-  (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream true
+  (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream     true
                                                                                :handler-fn streaming-handler-fn})
         messages (chat/create-messages "You are a helpful assistant." nil)]
     (loop []
       (println "")
-      (println "Loop messages: " messages)                  ;; todo: debug
-      (println "")                                          ;; todo: debug
-      (println "------------------------------------")
-      (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
+      (println "LOOP MESSAGES------------------------------------------------------------------")
+      (println messages)
+      (println "------------------------------------------------------------------LOOP MESSAGES")
+      (println "")
+      (println "PROMPT------------------------------------------------------------------")
+      (println "Enter text to send for a streaming complete, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving complete: streaming and synchronous (blocking)")
-          :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
-                  (println "")
-                  (recur)))))))
+          (= user-message "0") (println "Leaving streaming complete")
+          :else (do
+                  (println "\n\n")
+                  (println "RESPONSE----------------------------------------------------------------------")
+                  (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
+                    (println "")
+                    (println "----------------------------------------------------------------------RESPONSE")
+                    (recur))))))))
 
 
 (defn chat-nonstream
@@ -97,21 +108,26 @@
   (let [prepared-request (chat/create-prepared-request {:model model-default})]
     (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
       (println "")
-      (println "Loop messages: " messages)                  ;; todo: debug
-      (println "")                                          ;; todo: debug
-      (println "------------------------------------")
-      (println "Enter text to send for a synchronous completion, or enter \"0\" to exit.")
+      (println "LOOP MESSAGES------------------------------------------------------------------")
+      (println messages)
+      (println "------------------------------------------------------------------LOOP MESSAGES")
+      (println "")
+      (println "PROMPT------------------------------------------------------------------")
+      (println "Enter text to send for a non-streaming chat, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving complete: non-streaming and synchronous (blocking)")
+          (= user-message "0") (println "Leaving non-streaming chat")
           :else (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
-                  (println "")
-                  (println "\n\n")                          ;; todo: debug
-                  (println response)                        ;; todo: debug
-                  (println "\n\n")                          ;; todo: debug
+                  (println "\n\n")
+                  (println "RAW RESPONSE------------------------------------------------------------------")
+                  (println response)
+                  (println "------------------------------------------------------------------RAW RESPONSE")
+                  (println "\n\n")
                   (if (:success response)
                     (do
-                      (println (chat/get-response-as-string response))
+                      (do
+                        (println "FORMATTED RESPONSE--------------------------------------------------------")
+                        (println (chat/get-response-as-string response)))
                       (recur (:messages response)))
                     (do
                       (print-error response)
@@ -120,7 +136,26 @@
 
 (defn chat-stream
   [api-key-path]
-  (println "todo"))
+  (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream     true
+                                                                               :handler-fn streaming-handler-fn})]
+    (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
+      (println "")
+      (println "LOOP MESSAGES------------------------------------------------------------------")
+      (println messages)
+      (println "------------------------------------------------------------------LOOP MESSAGES")
+      (println "")
+      (println "PROMPT------------------------------------------------------------------")
+      (println "Enter text to send for a streaming chat, or enter \"0\" to exit.")
+      (let [user-message (clojure.string/trim (read-line))]
+        (cond
+          (= user-message "0") (println "Leaving streaming chat")
+          :else (do
+                  (println "\n\n")
+                  (println "RESPONSE----------------------------------------------------------------------")
+                  (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
+                    (println "")
+                    (println "----------------------------------------------------------------------RESPONSE")
+                    (recur (:messages response)))))))))
 
 
 (let [api-key-path (get-api-key-path)]
@@ -137,7 +172,7 @@
     ;; chat
     (println "chat:")
     (println "  (3) non-streaming")
-    (println "  (4) streaming todo")
+    (println "  (4) streaming")
     (println "")
     ;;
     (println "(0) EXIT")
