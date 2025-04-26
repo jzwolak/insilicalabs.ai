@@ -83,9 +83,11 @@
 
 ;; - returns content as a string
 ;; - if response is not successful, returns nil
-;; - if no content, returns nil
+;; - if no content, returns empty string.  Allows for cases of no content (like for streaming) to avoid checking if
+;;   content was present
 ;;   - for streaming
-;;     - possible that the 'delta' didn't have content, such as first and last chunks
+;;     - possible that the 'delta' didn't have content, such as first and last chunks or finish_reason=tool_calls,
+;;       function_call, stop
 ;;     - will not have multiple choices, so n = 0 always
 (defn get-response-as-string
   ([response]
@@ -93,9 +95,12 @@
   ([response n]
    (if-not (:success response)
      nil
-     (if (:stream response)
-       (get-in response [:response :data :choices n :delta :content])
-       (get-in response [:response :body :choices n :message :content])))))
+     (let [content (if (:stream response)
+                     (get-in response [:response :data :choices n :delta :content])
+                     (get-in response [:response :body :choices n :message :content]))]
+       (if (nil? content)
+         ""
+         content)))))
 
 
 ;; - returns a vector of content choices as strings
@@ -203,7 +208,7 @@
          (println "\n\n -----------------end DEBUG in stream")
          (let [reader (get-in response [:response :body])
                config {:handler-fn (get-in request [:response-config :handler-fn])}]
-           (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) streaming-handler-adapter-fn config "todo-fail-point" )))
+           (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) streaming-handler-adapter-fn config "todo-fail-point")))
        (cond-> response
                (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
                true (check-response-errors))))))

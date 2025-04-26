@@ -313,14 +313,14 @@ The reason the model stopped generating is given in the response `finish_reason`
 successful HTTP response, e.g. HTTP code `200`, and applies to both non-streaming and streaming modes.  The table below
 describes the finish reasons.
 
-| Finish Reason  | Error? | Done Generating? | Meaning                                                         |
-|----------------|--------|------------------|-----------------------------------------------------------------|
-| stop           | no     | yes              | Normal completion                                               |
-| length         | yes    | yes              | Hit max token limit                                             |
-| content_filter | yes    | yes              | Blocked by safety filters                                       |
-| tool_calls     | no     | no               | Model paused to make a tool/function call                       |
-| function call  | no     | no               | Legacy tool calling                                             |
-| null           | no     | no               | Model still generating, used during streaming in-between chunks |
+| Finish Reason  | Error? | Done Generating? | Meaning                                   |
+|----------------|--------|------------------|-------------------------------------------|
+| stop           | no     | yes              | Normal completion                         |
+| length         | yes    | yes              | Hit max token limit                       |
+| content_filter | yes    | yes              | Blocked by safety filters                 |
+| tool_calls     | no     | no               | Model paused to make a tool/function call |
+| function_call  | no     | no               | Legacy tool calling                       |
+| null           | no     | no               | Used during streaming in-between chunks   |
 
 A finish reason of `length` or `content_filter` indicates an error with the request.  Note that these conditions can
 indicate an error while the HTTP response code of `200` indicates success since the HTTP response code applies to the
