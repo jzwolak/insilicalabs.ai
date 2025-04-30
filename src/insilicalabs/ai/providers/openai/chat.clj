@@ -8,9 +8,6 @@
 
 (def ^:const chat-completions-url-default "https://api.openai.com/v1/chat/completions")
 
-(def ^:const fail-point-request-config :request-config)
-(def ^:const fail-point-request :request)
-
 
 ;; auth-config
 ;;   - removes :api-key
@@ -143,10 +140,9 @@
 
 
 (defn- change-response-to-unsuccessful
-  [response fail-point reason]
+  [response reason]
   (-> response
       (assoc :success false)
-      (assoc :fail-point fail-point)
       (assoc :reason reason)))
 
 
@@ -154,9 +150,9 @@
   [response]
   (let [finish-reason (get-in response [:response :finish_reason])]
     (if (= finish-reason "length")
-      (change-response-to-unsuccessful response fail-point-request "Response stopped due to token limit being reached.")
+      (change-response-to-unsuccessful response "Response stopped due to token limit being reached.")
       (if (= finish-reason "content_filter")
-        (change-response-to-unsuccessful response fail-point-request "The response was blocked by the content filter for potentially sensitive or unsafe content.")
+        (change-response-to-unsuccessful response "The response was blocked by the content filter for potentially sensitive or unsafe content.")
         response))))
 
 
@@ -176,10 +172,8 @@
              headers)))
 
 
-(defn streaming-handler-adapter-fn
-  [response config]
-  (let [handler-fn (:handler-fn config)]
-    (handler-fn response)))
+(defn get-contents [m]
+  (mapv (comp :content :message) (get-in m [:response :body :choices])))
 
 
 ;; - for both streaming and non-streaming
@@ -196,23 +190,27 @@
 ;;
 ;; see 'complete'
 (defn- complete-response
-  ([response]
-   (complete-response response nil))                        ;; assumes that this is NOT streaming
-  ([response request]
-   (let [response (if (contains? (:response response) :headers)
-                    (assoc-in response [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
-                    response)]
-     (if (:stream response)
-       (do
-         (println "\n\n DEBUG in stream---------------------")
-         (println response)
-         (println "\n\n -----------------end DEBUG in stream")
-         (let [reader (get-in response [:response :body])
-               config {:handler-fn (get-in request [:response-config :handler-fn])}]
-           (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) streaming-handler-adapter-fn config "todo-fail-point")))
-       (cond-> response
-               (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
-               true (check-response-errors))))))
+  [response request]
+  (let [response (if (contains? (:response response) :headers)
+                   (assoc-in response [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
+                   response)
+        handler-fn (get-in request [:response-config :handler-fn])]
+    (if (:stream response)
+      (let [reader (get-in response [:response :body])]
+        (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) handler-fn))
+      (let [response (cond-> response
+                             (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
+                             true (check-response-errors))]
+        (if (some? handler-fn)
+          (do
+            (handler-fn response)
+            (let [caller-response {:success (:success response)
+                                   :stream  false}
+                  caller-response (if (:success response)
+                                    (assoc caller-response :messages (get-contents response))
+                                    caller-response)]
+              caller-response))
+          response)))))
 
 
 ;; - Does one chat completion (does not store and reference previous completions).  To store and reference previous
@@ -255,7 +253,6 @@
 ;;
 ;; - Returns on failure a map such that:
 ;;   - :success = false
-;;   - :fail-point = where the request failed with values of :http-config, :http-request
 ;;   - :reason = string reason for the failure
 ;;   - :exception = the exception obj; only set if an exception occurred
 ;;   - :response = original HTTP response, if set, that includes keywords such as:
@@ -293,6 +290,7 @@
   [prepared-request api-key messages user-message]
   (let [messages (or messages [])
         completion (complete prepared-request api-key messages user-message)]
+    (println "COMPLETION: " completion)
     (if-not (:success completion)
       completion
       (if (:stream completion)
@@ -301,33 +299,13 @@
           (-> completion
               (dissoc :message)
               (assoc :messages messages)))
-        (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)}))))))
+        (if (contains? (:response-config prepared-request) :handler-fn)
+          (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-in completion [:messages 0])}))
+          (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)})))))))
 
 
-(defn- complete-impl-old [config context]
-  (let [stream (get config :stream false)
-        response (http/post
-                   (cond->
-                     {:url     chat-completions-url-default
-                      :headers (create-headers config)
-                      :body    (json/generate-string
-                                 {:model    "gpt-4o"
-                                  :stream   stream
-                                  :messages context})}
-                     stream (assoc :as :reader)))]
-    (if (:success response)
-      (cond-> response
-              true :response
-              true :body
-              (not stream) (json/parse-string keyword)
-              (not stream) (get-in [:choices 0 :message :content]))
-      response)))
 
-(defn stream-old [config context-or-text consumer-fn]
-  (let [context (create-context-old context-or-text)
-        reader (complete-impl-old (assoc config :stream true) context)]
-    (sse-stream/read-sse-stream-old reader consumer-fn)))
-
+;; todo: keep for documentation reference
 (defn complete-old
   "Perform a simple chat completion given context-or-text. If context-or-text is a string then it will be treated as
   a single message from the user. Otherwise, it will be used as the data for OpenAI's :messages. For example,
@@ -348,9 +326,10 @@
    (complete-old config (conj context {:role "user" :content user-message})))
   ([config context-or-text]
    {:pre [(:api-key config)]}
-   (let [context (create-context-old context-or-text)]
-     (complete-impl-old config context))))
+   (let [context (create-context-old context-or-text)])))
 
+
+;; todo: keep for documentation reference
 (defn chat-old
   "Hold a conversation by adding new user messages to the context and completing. This always returns the full context
   with user's new-message and chat completion."

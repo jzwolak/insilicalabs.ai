@@ -3,20 +3,6 @@
   (:import (java.io IOException)))
 
 
-;
-; - advanced options (AI provider independent)
-;     - :async? true
-;         - ;; respond callback
-;            (fn [response] (println "response is:" response))
-;            ;; raise callback
-;            (fn [exception] (println "exception message is: " (.getMessage exception))))
-;         - cancel request
-;     - :retry-handler ... IOExceptions are automatically retried, but can use retry-handler to control
-;     - :debug true
-
-
-
-
 
 (def ^:const http-request-config-mods {:throw-exceptions false})
 
@@ -24,18 +10,8 @@
 
 (def ^:const http-post-config-mods {:method :post})
 
-(def ^:const fail-point-http-config :http-config)
-(def ^:const fail-point-http-request :http-request)
 
-; todo:
-; modes:
-;   - synch request/response, single response object
-;   - asynch request/response, single response object
-;   - stream: asynch, stream of response objects
-;
-;;
 ;; success     <boolean>
-;; fail-point  <key, e.g. ':http-request'>
 ;; reason      <key or string?>
 ;;
 ;; response    <response map>
@@ -47,32 +23,25 @@
   (let [config-in (apply merge config more-configs)]
     (if (nil? config-in)
       {:success    false
-       :fail-point fail-point-http-config
        :reason     "Config can't be nil."}
       (if (not (map? config-in))
         {:success    false
-         :fail-point fail-point-http-config
          :reason     "Config must be a map."}
         (if (empty? config-in)
           {:success    false
-           :fail-point fail-point-http-config
            :reason     "Config map cannot be empty."}
           (let [config-final (merge http-request-config-mods config-in)]
             (if (not (contains? config-final :method))
               {:success    false
-               :fail-point fail-point-http-config
                :reason     "Config must contain the key ':method'."}
               (if (not (#{:get :post} (:method config-final)))
                 {:success    false
-                 :fail-point fail-point-http-config
                  :reason     "The ':method' value in the config must be either ':get' or ':post'."}
                 (if (not (contains? config-final :url))
                   {:success    false
-                   :fail-point fail-point-http-config
                    :reason     "Config must contain a URL defined in ':url'."}
                   (if (not (string? (:url config-final)))
                     {:success    false
-                     :fail-point fail-point-http-config
                      :reason     "The ':url' value in the config must be a string."}
                     (try
                       (let [response (dissoc (http/request config-final) :http-client)]
@@ -80,7 +49,6 @@
                           {:success true
                            :response response}
                           {:success    false
-                           :fail-point fail-point-http-request
                            :reason     (str "HTTP request failed. " (:reason-phrase response) " (" (:status response) ").")
                            :response   response}))
                       (catch IOException e
@@ -90,7 +58,6 @@
                                        reason-start
                                        (str reason-start " " message "."))]
                           {:success    false
-                           :fail-point fail-point-http-request
                            :reason     reason
                            :exception  e}))
                       (catch Exception e
@@ -100,7 +67,6 @@
                                        reason-start
                                        (str reason-start " " message "."))]
                           {:success    false
-                           :fail-point fail-point-http-request
                            :reason     reason
                            :exception  e})))))))))))))
 
