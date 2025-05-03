@@ -9,18 +9,41 @@
 (def ^:const chat-completions-url-default "https://api.openai.com/v1/chat/completions")
 
 
-;; auth-config
-;;   - removes :api-key
-;;
-;; request-config
-;;   - probably want to give :model
-;;   - removes :stream, :messages
-;;
-;; :response-config
-;;   - rules around async and stream interaction?
-;;
-;; only things that changes are (in actual request made later): api-key, messages
 (defn create-prepared-request
+  "Creates and returns a prepared request, suitable for submitting as part of request.  A prepared request captures
+  those values and pre-processes those aspects of the request that typically don't change between subsequent requests.
+
+  A prepared request is a map of four configurations, represented by maps, consisting of:  authentication, HTTP,
+  request, and response configurations.
+
+  The authentication configuration is optional.  It may include the organization and project if the user belongs to
+  multiple projects or if the API key is a legacy key; otherwise, the authentication configuration can be omitted or
+  left as an empty map.  The authentication configuration specifically does NOT include the API key to avoid exposure of
+  the key in memory and, if specified in ':api-key', the API key is removed. The authentication configuration is a map
+  that consists of the keys:
+    - :api-proj → the project, as a string; required if another key is set
+    - :api-org  → the organization, as a string; required if another key is set
+
+  The HTTP configuration is optional and specifies HTTP parameters.  The HTTP configuration can be omitted or set to an
+  empty map if no HTTP configuration changes are desired.  The HTTP configuration is a map that consists of the keys:
+    - :socket-timeout     → sets the time after which, when no data is received between the last received data and
+                            current, that a timeout is declared; must be a number; optional
+    - :connection-timeout → sets the time after which, when no answer is received from the remote machine, that a
+                            timeout is declared; must be a number; optional
+
+  The request configuration is required and must specify at least the model to be used.  The request configuration
+  specifies the parameters of API request.  The request configuration may consist of any key-value pair as defined in
+  the appropriate API to which the request will be submitted, with the JSON property in the API converted to a Clojure
+  keyword.  The `stream` property to enable streaming cannot be set here and, if so, is removed; set the `stream`
+  property in the response configuration.  The request configuration is a map that consists of the keys:
+    - :model → the model to use, as a string; required
+
+  The response configuration is optional.  The response configuration specifies the handling of the response.  If no
+  response configuration is given, then the response will be a non-streaming response returned to the caller.
+    - :handler-fn → the handler function to receive the response; optional but required if 'stream' is 'true'
+    - :stream     → 'true' to enable streaming and absent or 'false' to disable streaming
+
+  Does not validate the inputs or the returned configuration."
   ([request-config]
    (create-prepared-request {} {} request-config {}))
   ([request-config response-config]
@@ -47,6 +70,21 @@
 
 
 (defn create-prepared-request-from-config
+  "Builds and returns a prepared request from a configuration.  A configuration is a map of the four configurations--
+  authentication, HTTP, request, and response--expressed as maps.  Only the request configuration is required; if not
+  needed, then the others may be omitted or set to empty maps.
+
+  The config should be a map with keys:
+    - :auth-config     → authentication configuration, optional
+    - :http-config     → HTTP configuration, optional
+    - :request-config  → request configuration, required
+    - :response-config → response configuration, optional
+
+  See 'create-prepared-request' for a description of the keys in the configurations and an explanation of the returned
+  prepared request.
+
+  Does not validate the inputs or the returned configuration.
+  "
   [config]
   (let [{:keys [auth-config http-config request-config response-config]
          :or   {auth-config {} http-config {} request-config {} response-config {}}}
@@ -55,6 +93,18 @@
 
 
 (defn- create-headers
+  "Creates and returns a string representing the HTTP headers based on the input authorization configuration
+  `auth-config`.
+
+  The API key in key `:api-key` is required.  The organization `:api-org` and project `:api-proj` are only needed if the
+  user for API key is a member of multiple organizations or if the API key is a legacy key, otherwise these both should
+  be omitted.
+
+  The `auth-config` must be a map with keys:
+    - :api-key  → the API key, as a string; required
+    - :api-org  → the API organization, as a string; optional
+    - :api-proj → the API project, as a string; optional
+  "
   [auth-config]
   (cond-> {"Authorization" (str "Bearer " (:api-key auth-config))}
           (:api-org auth-config) (assoc "OpenAI-Organization" (:api-org auth-config))
@@ -62,6 +112,23 @@
 
 
 (defn create-messages
+  "Creates and returns a vector of messages, representing the conversation to submit as part of a request.
+
+  The `system-message` string argument, optional, adds a system message to the returned messages.  A system message, if
+  specified, is always added before a user message, if specified.  To omit the system message, set it to 'nil'.  A
+  system message entry takes the form '{:role \"system\" :content system-message}'.
+
+  The `user-message` string argument, optional, adds a user message to the returned messages.  A user message, if
+  specified, is always added after a system message, if specified.  To omit the system message, set it to 'nil'.  A user
+  message entry take the form '{:role \"user\" :content user-message}'.
+
+  The `messages` argument, optional, may be a vector of messages, an empty vector, or 'nil'.  If `messages` is not
+  specified or is 'nil', then the system and user messages are added to an empty vector.  The returned messages takes
+  the form:
+    [
+      {:role \"system\" :content \"<system message>\"},
+      {:role \"user\" :content \"<user message>\"}
+    ]"
   ([system-message user-message]
    (create-messages [] system-message user-message))
   ([messages system-message user-message]
@@ -72,21 +139,26 @@
 
 
 (defn create-messages-from-messages-or-user-message
+  "Returns a vector representing the conversation (e.g., messages) to submit as part of a request.  If
+  `messages-or-user-message` is a string, then returns a messages vector with the `messages-or-user-message` added as
+  a user message per 'create-messages'; else, `messages-or-user-message` is returned as-is."
   [messages-or-user-message]
   (if (string? messages-or-user-message)
     (create-messages nil messages-or-user-message)
     messages-or-user-message))
 
 
-;; - returns content as a string
-;; - if response is not successful, returns nil
-;; - if no content, returns empty string.  Allows for cases of no content (like for streaming) to avoid checking if
-;;   content was present
-;;   - for streaming
-;;     - possible that the 'delta' didn't have content, such as first and last chunks or finish_reason=tool_calls,
-;;       function_call, stop
-;;     - will not have multiple choices, so n = 0 always
 (defn get-response-as-string
+  "Returns a response's content as a string.  Operates on both non-streaming and streaming responses.  If the content
+  is 'nil', then an empty string is returned; this allows for cases like streaming to avoid checking if content was
+  present.  If the response failed, e.g. ':success' is 'false', then 'nil' is returned.  The `response` must be the
+  response map as returned by the 'complete' and 'chat' functions.
+
+  Arity 1: (get-response-as-string response)
+    - Returns the first content element (index 0) from the response.
+
+  Arity 2: (get-response-as-string response n)
+    - Returns the content at index n from the response."
   ([response]
    (get-response-as-string response 0))
   ([response n]
@@ -116,13 +188,6 @@
           [delta-content]))
       (let [choices (get-in response [:response :body :choices])]
         (doall (mapv #(get-in % [:message :content]) choices))))))
-
-
-(defn- create-context-old [context-or-text]
-  (cond
-    (nil? context-or-text) []
-    (string? context-or-text) [{:role "user" :content context-or-text}]
-    :else context-or-text))
 
 
 ;; see 'complete'
@@ -269,6 +334,10 @@
 ;;
 ;; - Does not throw exceptions.  All exceptions are captured and returned as maps with :success = false.
 ;;
+;;   - for streaming
+;;     - possible that the 'delta' didn't have content, such as first and last chunks or finish_reason=tool_calls,
+;;       function_call, stop
+;;     - will not have multiple choices, so n = 0 always
 (defn ^:impure complete
   ([prepared-request api-key messages-or-user-message]
    (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
@@ -304,6 +373,13 @@
           (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)})))))))
 
 
+
+;; todo: keep for keeping the function below
+(defn- create-context-old [context-or-text]
+  (cond
+    (nil? context-or-text) []
+    (string? context-or-text) [{:role "user" :content context-or-text}]
+    :else context-or-text))
 
 ;; todo: keep for documentation reference
 (defn complete-old

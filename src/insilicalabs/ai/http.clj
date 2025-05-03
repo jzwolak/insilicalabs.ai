@@ -79,7 +79,27 @@
   response; the contents of the response match that in the 'success' example above.  If an exception occurred, then the
   key ':exception' holds the exception object.
 
-  This function does not through exceptions.  All exceptions are handled by returning a map with key ':success' set to
+  In the case of the failure, the error code in the key ':error-code' provides a programmatic way to determine the cause
+  of the failure.  Error codes consist of:
+    - :http-config-nil                 → The HTTP configuration (and thus the entire configuration) was `nil`
+    - :http-config-not-map             → The HTTP configuration (and thus the entire configuration) was not a map
+    - :http-config-empty               → The HTTP configuration (and thus the entire configuration) was an empty map
+    - :http-config-method-missing      → The HTTP configuration did not specify the `:method` key to define the HTTP
+                                         method, e.g. `GET` or `POST`
+    - :http-config-method-invalid      → The HTTP configuration `:method` key was not one of the valid values, either
+                                         `:get` or `:post`
+    - :http-config-url-missing         → The HTTP configuration did not specify the `:url` key to define the URL to
+                                         which to connect
+    - :http-config-url-not-string      → The HTTP configuration `:url` key was not a string
+    - :http-request-failed             → The HTTP request failed.  See the `:response` key for reason phrase
+                                         `:reason-phrase` and status code `:status` in the returned map.  The failure
+                                         was not due to an exception.
+    - :http-request-failed-ioexception → The HTTP request failed due to an `IOException`.  See `:exception` for the
+                                         exception in the returned map.
+    - :http-request-failed-exception   → The HTTP request failed due an `Exception`.  See `:exception` for the exception
+                                         in the returned map.
+
+  This function does not throw exceptions.  All exceptions are handled by returning a map with key ':success' set to
   'false', as above."
   [config & more-configs]
   ;; Can test handling responses to HTTP failure codes at https://httpstat.us/

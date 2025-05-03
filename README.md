@@ -91,3 +91,20 @@ expensive, then a delay may be useful as follows.
 
 (defn chat [context new-message] (ai/chat @config context new-message))
 ```
+
+## Error Codes
+
+| Error Code                       | Description                                                                                                                                                                   |
+|----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| :http-config-nil                 | The HTTP configuration (and thus the entire configuration) was `nil`                                                                                                          |
+| :http-config-not-map             | The HTTP configuration (and thus the entire configuration) was not a map                                                                                                      |
+| :http-config-empty               | The HTTP configuration (and thus the entire configuration) was an empty map                                                                                                   |
+| :http-config-method-missing      | The HTTP configuration did not specify the `:method` key to define the HTTP method, e.g. `GET` or `POST`                                                                      |
+| :http-config-method-invalid      | The HTTP configuration `:method` key was not one of the valid values, either `:get` or `:post`                                                                                |
+| :http-config-url-missing         | The HTTP configuration did not specify the `:url` key to define the URL to which to connect                                                                                   |
+| :http-config-url-not-string      | The HTTP configuration `:url` key was not a string                                                                                                                            |
+| :http-request-failed             | The HTTP request failed.  See the `:response` key for reason phrase `:reason-phrase` and status code `:status` in the returned map.  The failure was not due to an exception. |
+| :http-request-failed-ioexception | The HTTP request failed due to an `IOException`.  See `:exception` for the exception in the returned map.                                                                     |
+| :http-request-failed-exception   | The HTTP request failed due an `Exception`.  See `:exception` for the exception in the returned map.                                                                          |
+
+

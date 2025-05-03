@@ -10,21 +10,25 @@
   must be strings.
 
   The API key is specifically excluded from this configuration to help promote minimizing the exposure of the key in
-  memory."
+  memory.
+
+  Does not validate the inputs or the returned configuration."
   [api-proj api-org]
   {:api-proj api-proj
    :api-org  api-org})
 
 
 (defn create-request-config
-  "Creates a request configuration, setting the model to `model`.  Argument `model` must be a string."
+  "Creates a request configuration, setting the model to `model`.  Argument `model` must be a string.  Does not validate
+  the inputs or the returned configuration."
   [model]
   {:model model})
 
 
 (defn create-response-config
   "Creates a response configuration, setting the handler function to `handler-fn` and, if provided, sets the stream
-   to `stream`.  Argument `handler-fn` must refer to a function, and `stream` must be 'true' or 'false'."
+   to `stream`.  Argument `handler-fn` must refer to a function, and `stream` must be 'true' or 'false'.  Does not
+   validate the inputs or the returned configuration."
   ([handler-fn]
    {:handler-fn handler-fn})
   ([handler-fn stream]

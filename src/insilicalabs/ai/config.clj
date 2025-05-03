@@ -11,7 +11,9 @@
   is declared.
 
   The socket timeout sets the time after which, when no data is received between the last received data and current,
-  that a timeout is declared."
+  that a timeout is declared.
+
+  Does not validate the inputs or the returned configuration."
   (cond-> {}
           (some? socket-timeout) (assoc :socket-timeout socket-timeout)
           (some? connection-timeout) (assoc :connection-timeout connection-timeout)))
