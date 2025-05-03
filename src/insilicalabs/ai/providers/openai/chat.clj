@@ -46,7 +46,7 @@
      prepared-request)))
 
 
-(defn create-prepared-request-from-full-config
+(defn create-prepared-request-from-config
   [config]
   (let [{:keys [auth-config http-config request-config response-config]
          :or   {auth-config {} http-config {} request-config {} response-config {}}}

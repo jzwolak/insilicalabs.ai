@@ -1,6 +1,7 @@
 (ns insilicalabs.ai.examples.providers.openai.chat
   (:require [clojure.java.io :as io]
-            [insilicalabs.ai.config :as config]
+            [insilicalabs.ai.providers.openai.config :as config]
+            [insilicalabs.ai.config :as http-config]
             [insilicalabs.ai.providers.openai.chat :as chat]))
 
 ;; USAGE:
@@ -230,16 +231,15 @@
 
 (defn demo-config
   [api-key-path]
-  (let [config {;;:auth-config (config/create-auth-config "my project" "my org")
-                :http-config (config/create-http-config)    ;; todo: add some params
-                :request-config {:model model-default}
-                :response-config {:stream true
-                                  :handler-fn streaming-handler-fn}}]
+  (let [config {:http-config     (http-config/create-http-config 6000 10000)
+                ;;:auth-config   (config/create-auth-config "my project" "my organization")
+                :request-config  (config/create-request-config model-default)
+                :response-config (config/create-response-config streaming-handler-fn true)}]
     ;;
     ;; Use the 'config' as a template for future prepared requests, especially when making multiple prepared requests.
     ;; Then some time later...
     ;;
-    (let [prepared-request (chat/create-prepared-request-from-full-config config)]
+    (let [prepared-request (chat/create-prepared-request-from-config config)]
       (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
         (println "")
         (println "LOOP MESSAGES------------------------------------------------------------------")
