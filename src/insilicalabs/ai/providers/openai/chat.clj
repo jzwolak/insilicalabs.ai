@@ -257,8 +257,10 @@
              headers)))
 
 
-(defn get-contents [m]
-  (mapv (comp :content :message) (get-in m [:response :body :choices])))
+(defn- get-contents [response]
+  "Returns a vector of messages extracted from `response`.  The `response` must be a map as returned by 'complete' and
+  'chat'.  Operates only on non-streaming responses."
+  (mapv (comp :content :message) (get-in response [:response :body :choices])))
 
 
 ;; - for both streaming and non-streaming

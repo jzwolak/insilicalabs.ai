@@ -442,3 +442,21 @@
                                                                     "LanguageHere" "english"}
                                                                    {:greetinghere "hello"
                                                                     :languagehere "english"})))
+
+
+(defn perform-get-contents-test
+  [response expected]
+  (let [get-contents #'chat/get-contents
+        actual (get-contents response)]
+    (is (= actual expected))))
+
+
+(deftest get-contents-test
+  (testing "1 content item"
+    (perform-get-contents-test {:success  true
+                                :response {:body {:choices [{:message {:content "hi"}}]}}} ["hi"]))
+  (testing "multiple content items"
+    (perform-get-contents-test {:success  true
+                                :response {:body {:choices [{:message {:content "hi"}}
+                                                            {:message {:content "hello"}}
+                                                            {:message {:content "hey"}}]}}} ["hi" "hello" "hey"])))
