@@ -10,7 +10,7 @@
 
 
 (defn create-prepared-request
-  "Creates and returns a prepared request, suitable for submitting as part of request.  A prepared request captures
+  "Creates and returns a prepared request, suitable for submitting as part of a request.  A prepared request captures
   those values and pre-processes those aspects of the request that typically don't change between subsequent requests.
 
   A prepared request is a map of four configurations, represented by maps, consisting of:  authentication, HTTP,
@@ -34,8 +34,9 @@
   The request configuration is required and must specify at least the model to be used.  The request configuration
   specifies the parameters of API request.  The request configuration may consist of any key-value pair as defined in
   the appropriate API to which the request will be submitted, with the JSON property in the API converted to a Clojure
-  keyword.  The `stream` property to enable streaming cannot be set here and, if so, is removed; set the `stream`
-  property in the response configuration.  The request configuration is a map that consists of the keys:
+  keyword.  The 'stream' property to enable streaming cannot be set here and, if so, it is removed; set the 'stream'
+  property in the response configuration.  The 'messages' property should not be set; if so, it is removed.  The request
+  configuration is a map that consists of the keys:
     - :model → the model to use, as a string; required
 
   The response configuration is optional.  The response configuration specifies the handling of the response.  If no
@@ -43,7 +44,7 @@
     - :handler-fn → the handler function to receive the response; optional but required if 'stream' is 'true'
     - :stream     → 'true' to enable streaming and absent or 'false' to disable streaming
 
-  Does not validate the inputs or the returned configuration."
+  Does not validate the inputs or the returned prepared request."
   ([request-config]
    (create-prepared-request {} {} request-config {}))
   ([request-config response-config]
@@ -93,7 +94,7 @@
 
 
 (defn- create-headers
-  "Creates and returns a string representing the HTTP headers based on the input authorization configuration
+  "Creates and returns a map representing the HTTP headers based on the input authorization configuration
   `auth-config`.
 
   The API key in key `:api-key` is required.  The organization `:api-org` and project `:api-proj` are only needed if the
@@ -132,20 +133,25 @@
   ([system-message user-message]
    (create-messages [] system-message user-message))
   ([messages system-message user-message]
-   (cond-> messages
-           (nil? messages) []
-           (some? system-message) (conj {:role "system" :content system-message})
-           (some? user-message) (conj {:role "user" :content user-message}))))
+   (let [messages (if (nil? messages)
+                    []
+                    messages)]
+     (cond-> messages
+             (nil? messages) []
+             (some? system-message) (conj {:role "system" :content system-message})
+             (some? user-message) (conj {:role "user" :content user-message})))))
 
 
-(defn create-messages-from-messages-or-user-message
+(defn- create-messages-from-messages-or-user-message
   "Returns a vector representing the conversation (e.g., messages) to submit as part of a request.  If
   `messages-or-user-message` is a string, then returns a messages vector with the `messages-or-user-message` added as
   a user message per 'create-messages'; else, `messages-or-user-message` is returned as-is."
   [messages-or-user-message]
-  (if (string? messages-or-user-message)
-    (create-messages nil messages-or-user-message)
-    messages-or-user-message))
+  (if (nil? messages-or-user-message)
+    []
+    (if (string? messages-or-user-message)
+      (create-messages nil messages-or-user-message)
+      messages-or-user-message)))
 
 
 (defn get-response-as-string
