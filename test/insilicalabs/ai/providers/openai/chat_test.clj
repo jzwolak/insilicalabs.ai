@@ -1,7 +1,8 @@
 (ns insilicalabs.ai.providers.openai.chat-test
   (:require
     [clojure.test :refer :all]
-    [insilicalabs.ai.providers.openai.chat :as chat]))
+    [insilicalabs.ai.providers.openai.chat :as chat]
+    [clojure.string :as str]))
 
 
 (defn check-prepared-request-test
@@ -280,13 +281,9 @@
 
 (deftest get-response-as-string-test
   ;;
-  ;; general
-  (testing "arity [response]: request not successful"
-    (perform-get-response-as-string-test {:success false} nil))
-  (testing "arity [response]: request not successful"
-    (perform-get-response-as-string-test {:success false} nil))
-  ;;
   ;; [response]
+  (testing "arity [response]: request not successful"
+    (perform-get-response-as-string-test {:success false} nil))
   (testing "arity [response]: non-streaming, no content"
     (perform-get-response-as-string-test (non-streaming-response nil) ""))
   (testing "arity [response]: non-streaming, has content"
@@ -297,6 +294,8 @@
     (perform-get-response-as-string-test (streaming-response "Content") "Content"))
   ;;
   ;; [response n]
+  (testing "arity [response]: request not successful"
+    (perform-get-response-as-string-test {:success false} 0 nil))
   (testing "arity [response]: non-streaming, no content, index 0"
     (perform-get-response-as-string-test (non-streaming-response nil) 0 ""))
   (testing "arity [response]: non-streaming, has content, index 0"
@@ -312,5 +311,134 @@
   (testing "arity [response]: streaming, no content, index 1"
     (perform-get-response-as-string-test (streaming-response nil) 1 ""))
   (testing "arity [response]: streaming, has content, index 1"
-    (perform-get-response-as-string-test (streaming-response "Content") 1 ""))
-  )
+    (perform-get-response-as-string-test (streaming-response "Content") 1 "")))
+
+
+(defn perform-get-response-as-string-vector-test
+  [response expected]
+  (let [actual (chat/get-response-as-string-vector response)]
+    (is (= actual expected))))
+
+
+(deftest get-response-as-string-vector-test
+  ;;
+  ;; general
+  (testing "response not successful"
+    (perform-get-response-as-string-vector-test {:success false} nil))
+  ;;
+  ;; non-streaming
+  (testing "non-streaming, 0 entries"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :response {:body {:choices [{:message {}}]}}} [""]))
+  (testing "non-streaming, 1 entry nil"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :response {:body {:choices [{:message {:content nil}}]}}} [""]))
+  (testing "non-streaming, 1 entry non-nil"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :response {:body {:choices [{:message {:content "hi"}}]}}} ["hi"]))
+  (testing "non-streaming, multiple entries"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :response {:body {:choices [{:message {:content "hi"}}
+                                                                             {:message {:content nil}}
+                                                                             {:message {:content "hello"}}]}}} ["hi" "" "hello"]))
+  ;;
+  ;; streaming
+  (testing "non-streaming, 0 entries"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :stream   true
+                                                 :response {:data {:choices [{:delta {}}]}}} [""]))
+  (testing "non-streaming, 1 entry nil"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :stream   true
+                                                 :response {:data {:choices [{:delta {:content nil}}]}}} [""]))
+  (testing "non-streaming, 1 entry non-nil"
+    (perform-get-response-as-string-vector-test {:success  true
+                                                 :stream   true
+                                                 :response {:data {:choices [{:delta {:content "hi"}}]}}} ["hi"])))
+
+
+;; todo: complete-request
+
+
+(deftest change-response-to-unsuccessful-test
+  (let [change-response-to-unsuccessful #'chat/change-response-to-unsuccessful]
+    (is (= (change-response-to-unsuccessful {:success true} :request-failed-limit "Because") {:success    false
+                                                                                              :error-code :request-failed-limit
+                                                                                              :reason     "Because"}))))
+
+
+(defn perform-check-response-errors-test
+  [response expected]
+  (let [check-response-errors #'chat/check-response-errors
+        actual (check-response-errors response)
+        actual-reason (:reason actual)
+        actual-adjusted (dissoc actual :reason)
+        expected-reason-list (:reason-list expected)
+        expected-adjusted (dissoc expected :reason-list)]
+    (is (= actual-adjusted expected-adjusted))
+    (is (every? #(str/includes? (str/lower-case actual-reason) (str/lower-case %)) expected-reason-list)
+        (str "Expected reason substrings " expected-reason-list " to be in actual reason: " actual-reason))))
+
+
+(deftest check-response-errors-test
+  (testing "no response errors"
+    (perform-check-response-errors-test {:response {:finish_reason "ok"}} {:response {:finish_reason "ok"}}))
+  (testing "err: length"
+    (perform-check-response-errors-test {:response {:finish_reason "length"}} {:response    {:finish_reason "length"}
+                                                                               :success     false
+                                                                               :error-code  :request-failed-limit
+                                                                               :reason-list ["token" "limit"]}))
+  (testing "err: content_filter"
+    (perform-check-response-errors-test {:response {:finish_reason "content_filter"}} {:response    {:finish_reason "content_filter"}
+                                                                                       :success     false
+                                                                                       :error-code  :request-failed-content-filter
+                                                                                       :reason-list ["blocked" "content" "filter"]})))
+
+(defn perform-normalize-string-to-kebab-keyword-test
+  [property expected]
+  (let [normalize-string-to-kebab-keyword #'chat/normalize-string-to-kebab-keyword]
+    (is (= (normalize-string-to-kebab-keyword property) expected))))
+
+
+(deftest normalize-string-to-kebab-keyword-test
+  (testing "no change, already kebab: keyword no dash"
+    (perform-normalize-string-to-kebab-keyword-test :hello :hello))
+  (testing "no change, already kebab: keyword w/ dash"
+    (perform-normalize-string-to-kebab-keyword-test :hello-there :hello-there))
+  (testing "keyword camel w/ dash"
+    (perform-normalize-string-to-kebab-keyword-test :Hello-There :hello-there))
+  (testing "keyword camel"
+    (perform-normalize-string-to-kebab-keyword-test :HelloThere :hellothere))
+  (testing "string camel w/ dash"
+    (perform-normalize-string-to-kebab-keyword-test "Hello-There" :hello-there))
+  (testing "string camel"
+    (perform-normalize-string-to-kebab-keyword-test "HelloThere" :hellothere)))
+
+
+(defn perform-normalize-all-string-properties-to-kebab-keyword-test
+  [headers expected]
+  (let [normalize-all-string-properties-to-kebab-keyword #'chat/normalize-all-string-properties-to-kebab-keyword]
+    (is (= (normalize-all-string-properties-to-kebab-keyword headers) expected))))
+
+
+(deftest normalize-all-string-properties-to-kebab-keyword-test
+  (testing "no change, already kebab: no dash"
+    (perform-normalize-all-string-properties-to-kebab-keyword-test {:greeting "hello"
+                                                                    :language "english"}
+                                                                   {:greeting "hello"
+                                                                    :language "english"}))
+  (testing "no change, already kebab: w/ dash"
+    (perform-normalize-all-string-properties-to-kebab-keyword-test {:greeting-here "hello"
+                                                                    :language-here "english"}
+                                                                   {:greeting-here "hello"
+                                                                    :language-here "english"}))
+  (testing "string camel w/ dash"
+    (perform-normalize-all-string-properties-to-kebab-keyword-test {"Greeting-Here" "hello"
+                                                                    "Language-Here" "english"}
+                                                                   {:greeting-here "hello"
+                                                                    :language-here "english"}))
+  (testing "string camel"
+    (perform-normalize-all-string-properties-to-kebab-keyword-test {"GreetingHere" "hello"
+                                                                    "LanguageHere" "english"}
+                                                                   {:greetinghere "hello"
+                                                                    :languagehere "english"})))

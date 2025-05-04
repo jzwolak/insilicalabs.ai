@@ -106,5 +106,7 @@ expensive, then a delay may be useful as follows.
 | :http-request-failed             | The HTTP request failed.  See the `:response` key for reason phrase `:reason-phrase` and status code `:status` in the returned map.  The failure was not due to an exception. |
 | :http-request-failed-ioexception | The HTTP request failed due to an `IOException`.  See `:exception` for the exception in the returned map.                                                                     |
 | :http-request-failed-exception   | The HTTP request failed due an `Exception`.  See `:exception` for the exception in the returned map.                                                                          |
+| :request-failed-limit            | The response stopped due to the token limit being reached                                                                                                                     |
+| :request-failed-content-filter   | The response was blocked by the content filter for potentially sensitive or unsafe content                                                                                    |
 
 

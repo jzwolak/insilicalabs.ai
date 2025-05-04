@@ -178,24 +178,25 @@
          content)))))
 
 
-;; todo: parity with `get-response-as-string`, any non-content should be empty string and not nil
-;; - returns a vector of content choices as strings
-;;   - streaming will have max 1 choice
-;;   - if streaming delta content is not present, then returns empty vector
-;; - if response is not successful, returns nil
 (defn get-response-as-string-vector
+  "Returns a vector with all content items as strings.  Operates on both non-streaming and streaming responses.  If no
+  entries are found, then an empty vector is returned.  If an entry does not contain content or if that content is 'nil'
+  then the content is converted to an empty string; this allows for cases like streaming to avoid checking if content
+  was present.  If the response failed, e.g. ':success' is 'false', then 'nil' is returned.  The `response` must be the
+  response map as returned by the 'complete' and 'chat' functions."
   [response]
   (if-not (:success response)
     nil
     (if (:stream response)
       (let [delta-content (get-in response [:response :data :choices 0 :delta :content])]
         (if (nil? delta-content)
-          []
+          [""]
           [delta-content]))
       (let [choices (get-in response [:response :body :choices])]
-        (doall (mapv #(get-in % [:message :content]) choices))))))
+        (mapv #(or (get-in % [:message :content]) "") choices)))))
 
 
+;; todo: docs and tests
 ;; see 'complete'
 (defn- ^:impure complete-request
   [prepared-request]
@@ -211,24 +212,36 @@
 
 
 (defn- change-response-to-unsuccessful
-  [response reason]
+  "Change the response `response` to unsuccessful by setting ':success' to 'false', ':error-code' to `error-code`, and
+  ':reason' to `reason`."
+  [response error-code reason]
   (-> response
       (assoc :success false)
+      (assoc :error-code error-code)
       (assoc :reason reason)))
 
 
 (defn- check-response-errors
+  "Checks for possible response errors in `response` and updates the response accordingly.
+
+  Checks for errors at [:response :finish_reason] for conditions of 'length' or 'content_filter' which indicates an
+  error occurred.  If so, changes the response to unsuccessful by setting ':success' to 'false', ':error-code to the
+  error code as below, and ':reason' to a reason for the failure.
+
+  The error codes are assigned per finish_reason as follows:
+    - length         → :request-failed-limit
+    - content_filter → :request-failed-content-filter"
   [response]
   (let [finish-reason (get-in response [:response :finish_reason])]
     (if (= finish-reason "length")
-      (change-response-to-unsuccessful response "Response stopped due to token limit being reached.")
+      (change-response-to-unsuccessful response :request-failed-limit "Response stopped due to token limit being reached.")
       (if (= finish-reason "content_filter")
-        (change-response-to-unsuccessful response "The response was blocked by the content filter for potentially sensitive or unsafe content.")
+        (change-response-to-unsuccessful response :request-failed-content-filter "The response was blocked by the content filter for potentially sensitive or unsafe content.")
         response))))
 
 
-;; normalizes string 'k' to kebab case and convert to keyword
 (defn- normalize-string-to-kebab-keyword [k]
+  "Converts `k` to a kebab keyword.  The input `k` may be a string or keyword."
   (-> k
       name
       (str/replace #"[_\s]" "-")
@@ -237,6 +250,7 @@
 
 
 (defn- normalize-all-string-properties-to-kebab-keyword [headers]
+  "Normalizes all keys in `headers` to kebab keywords.  The keys may be strings or keywords."
   (into {}
         (map (fn [[k v]]
                [(normalize-string-to-kebab-keyword k) v])
