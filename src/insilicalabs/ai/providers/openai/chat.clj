@@ -21,8 +21,8 @@
   left as an empty map.  The authentication configuration specifically does NOT include the API key to avoid exposure of
   the key in memory and, if specified in ':api-key', the API key is removed. The authentication configuration is a map
   that consists of the keys:
-    - :api-proj → the project, as a string; required if another key is set
-    - :api-org  → the organization, as a string; required if another key is set
+    - :api-proj → the project, as a string; optional, but required if ':api-org' is set
+    - :api-org  → the organization, as a string; optional, but required if ':api-proj' is set
 
   The HTTP configuration is optional and specifies HTTP parameters.  The HTTP configuration can be omitted or set to an
   empty map if no HTTP configuration changes are desired.  The HTTP configuration is a map that consists of the keys:
@@ -196,10 +196,73 @@
         (mapv #(or (get-in % [:message :content]) "") choices)))))
 
 
-;; todo: docs and tests
-;; see 'complete'
+;; todo: tests
 (defn- ^:impure complete-request
+  "Performs the HTTP request, based on the configuration in `prepared-request` for the OpenAI complete API and returns
+  the response as a map.
+
+  A prepared request is a map of four configurations, represented by maps, consisting of:  authentication, HTTP,
+  request, and response configurations.  This function requires the authentication and request configurations; the
+  others are ignored.
+
+  The authentication configuration is required.  It must include the API key specified with `:api-key`.  It may include
+  the organization and project if the user belongs to multiple projects or if the API key is a legacy key; otherwise,
+  the authentication configuration can be omitted or left as an empty map.  The authentication configuration is a map
+  that consists of the keys:
+    - :api-key  → the API key; required
+    - :api-proj → the project, as a string; optional, but required if ':api-org is set'
+    - :api-org  → the organization, as a string; optional, but required if ':api-proj' is set
+
+  The request configuration is required and must specify at least the model to be used.  The request configuration
+  specifies the parameters of API request.  The request configuration may consist of any key-value pair as defined in
+  the appropriate API to which the request will be submitted, with the JSON property in the API converted to a Clojure
+  keyword.  The 'stream' property to enable streaming cannot be set here and, if so, it is removed; set the 'stream'
+  property in the response configuration.  The 'messages' property should not be set; if so, it is removed.  The request
+  configuration is a map that consists of the keys:
+    - :model    → the model to use, as a string; required
+    - :messages → a vector of one or more messages describing the conversation; required
+
+  On success, the returned map contains key ':success' set to 'true' and ':response' set the HTTP response.
+
+  The HTTP response in ':response' takes the form (selected fields shown):
+    :cached <nil for not cached>
+    :protocol-version <protocol version>
+    :cookies <cookies>
+    :reason-phrase <string reason>
+    :headers <string headers>
+    :status <string status code>
+    :body <stringified JSON>
+
+  On failure, the returned map contains key ':success' set to 'false', ':error-code' set to a keyword error code, and
+  ':reason' set to a string reason for the error.  If a response was returned, then key ':response' is set to the HTTP
+  response; the contents of the response match that in the 'success' example above.  If an exception occurred, then the
+  key ':exception' holds the exception object.
+
+  In the case of a failure, the error code in the key ':error-code' provides a programmatic way to determine the cause
+  of the failure.  Error codes consist of:
+    - :http-config-nil                 → The HTTP configuration (and thus the entire configuration) was `nil`
+    - :http-config-not-map             → The HTTP configuration (and thus the entire configuration) was not a map
+    - :http-config-empty               → The HTTP configuration (and thus the entire configuration) was an empty map
+    - :http-config-unknown-key         → The HTTP configuration contained an unknown key
+    - :http-config-method-missing      → The HTTP configuration did not specify the `:method` key to define the HTTP
+                                         method, e.g. `GET` or `POST`
+    - :http-config-method-invalid      → The HTTP configuration `:method` key was not one of the valid values, either
+                                         `:get` or `:post`
+    - :http-config-url-missing         → The HTTP configuration did not specify the `:url` key to define the URL to
+                                         which to connect
+    - :http-config-url-not-string      → The HTTP configuration `:url` key was not a string
+    - :http-request-failed             → The HTTP request failed.  See the `:response` key for reason phrase
+                                         `:reason-phrase` and status code `:status` in the returned map.  The failure
+                                         was not due to an exception.
+    - :http-request-failed-ioexception → The HTTP request failed due to an `IOException`.  See `:exception` for the
+                                         exception in the returned map.
+    - :http-request-failed-exception   → The HTTP request failed due an `Exception`.  See `:exception` for the exception
+                                         in the returned map.
+
+  This function does not throw exceptions.  All exceptions are handled by returning a map with key ':success' set to
+  'false', as above."
   [prepared-request]
+  ;; todo: check for: api-key, api-proj/api-org; model, and messages; unknown keys?
   (let [{:keys [auth-config request-config prepared-request]
          :or   {auth-config {} request-config {} prepared-request {}}} prepared-request]
     (http/post

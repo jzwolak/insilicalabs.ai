@@ -99,6 +99,7 @@ expensive, then a delay may be useful as follows.
 | :http-config-nil                 | The HTTP configuration (and thus the entire configuration) was `nil`                                                                                                          |
 | :http-config-not-map             | The HTTP configuration (and thus the entire configuration) was not a map                                                                                                      |
 | :http-config-empty               | The HTTP configuration (and thus the entire configuration) was an empty map                                                                                                   |
+| :http-config-unknown-key         | The HTTP configuration contained an unknown key                                                                                                                               |
 | :http-config-method-missing      | The HTTP configuration did not specify the `:method` key to define the HTTP method, e.g. `GET` or `POST`                                                                      |
 | :http-config-method-invalid      | The HTTP configuration `:method` key was not one of the valid values, either `:get` or `:post`                                                                                |
 | :http-config-url-missing         | The HTTP configuration did not specify the `:url` key to define the URL to which to connect                                                                                   |

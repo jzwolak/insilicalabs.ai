@@ -6,7 +6,7 @@
 (def ^:const http-request-config-mods {:throw-exceptions false})
 (def ^:const http-get-config-mods {:method :get})
 (def ^:const http-post-config-mods {:method :post})
-
+(def ^:const allowed-http-config-keys [:method :url :throw-exceptions :socket-timeout :connection-timeout])
 
 (defn- build-check-config
   "Builds and checks an HTTP configuration, based on the HTTP configuration `config`.  On success returns a map with
@@ -19,7 +19,21 @@
   A valid `config`:
     - must be a non-empty map
     - must contain the key ':method' set to either ':get' for a GET request or ':post' for a POST request
-    - must contain the key ':url' set to a string"
+    - must contain the key ':url' set to a string
+
+  In the case of a failure, the error code in the key ':error-code' provides a programmatic way to determine the cause
+  of the failure.  Error codes consist of:
+    - :http-config-nil            → The HTTP configuration (and thus the entire configuration) was `nil`
+    - :http-config-not-map        → The HTTP configuration (and thus the entire configuration) was not a map
+    - :http-config-empty          → The HTTP configuration (and thus the entire configuration) was an empty map
+    - :http-config-unknown-key    → The HTTP configuration contained an unknown key
+    - :http-config-method-missing → The HTTP configuration did not specify the `:method` key to define the HTTP
+                                    method, e.g. `GET` or `POST`
+    - :http-config-method-invalid → The HTTP configuration `:method` key was not one of the valid values, either `:get`
+                                    or `:post`
+    - :http-config-url-missing    → The HTTP configuration did not specify the `:url` key to define the URL to which to
+                                    connect
+    - :http-config-url-not-string → The HTTP configuration `:url` key was not a string"
   [config]
   (if (nil? config)
     {:success    false
@@ -33,25 +47,30 @@
         {:success    false
          :error-code :http-config-empty
          :reason     "Config map cannot be empty."}
-        (let [config-final (merge http-request-config-mods config)]
-          (if (not (contains? config-final :method))
+        (let [config-final (merge http-request-config-mods config)
+              disallowed-keys (remove (set allowed-http-config-keys) (keys config))]
+          (if (seq disallowed-keys)
             {:success    false
-             :error-code :http-config-method-missing
-             :reason     "Config must contain the key ':method'."}
-            (if (not (#{:get :post} (:method config-final)))
+             :error-code :http-config-unknown-key
+             :reason     (str "Unknown key(s) in config: " disallowed-keys ".")}
+            (if (not (contains? config-final :method))
               {:success    false
-               :error-code :http-config-method-invalid
-               :reason     "The ':method' value in the config must be either ':get' or ':post'."}
-              (if (not (contains? config-final :url))
+               :error-code :http-config-method-missing
+               :reason     "Config must contain the key ':method'."}
+              (if (not (#{:get :post} (:method config-final)))
                 {:success    false
-                 :error-code :http-config-url-missing
-                 :reason     "Config must contain a URL defined in ':url'."}
-                (if (not (string? (:url config-final)))
+                 :error-code :http-config-method-invalid
+                 :reason     "The ':method' value in the config must be either ':get' or ':post'."}
+                (if (not (contains? config-final :url))
                   {:success    false
-                   :error-code :http-config-url-not-string
-                   :reason     "The ':url' value in the config must be a string."}
-                  {:success true
-                   :config  config-final})))))))))
+                   :error-code :http-config-url-missing
+                   :reason     "Config must contain a URL defined in ':url'."}
+                  (if (not (string? (:url config-final)))
+                    {:success    false
+                     :error-code :http-config-url-not-string
+                     :reason     "The ':url' value in the config must be a string."}
+                    {:success true
+                     :config  config-final}))))))))))
 
 
 (defn ^:impure request
@@ -84,6 +103,7 @@
     - :http-config-nil                 → The HTTP configuration (and thus the entire configuration) was `nil`
     - :http-config-not-map             → The HTTP configuration (and thus the entire configuration) was not a map
     - :http-config-empty               → The HTTP configuration (and thus the entire configuration) was an empty map
+    - :http-config-unknown-key         → The HTTP configuration contained an unknown key
     - :http-config-method-missing      → The HTTP configuration did not specify the `:method` key to define the HTTP
                                          method, e.g. `GET` or `POST`
     - :http-config-method-invalid      → The HTTP configuration `:method` key was not one of the valid values, either

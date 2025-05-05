@@ -46,8 +46,13 @@
                                      {:success     false
                                       :error-code  :http-config-empty
                                       :reason-list ["config" "map" "empty"]}))
+  (testing "config contains an unrecognized key"
+    (perform-build-check-config-test {:something "hello"}
+                                     {:success     false
+                                      :error-code  :http-config-unknown-key
+                                      :reason-list ["unknown" "key" "config"]}))
   (testing "':method' key not defined"
-    (perform-build-check-config-test {:something "x"}
+    (perform-build-check-config-test {:url "x"}
                                      {:success     false
                                       :error-code  :http-config-method-missing
                                       :reason-list ["config must contain" "key" ":method"]}))
@@ -152,9 +157,15 @@
                           {:success     false
                            :error-code  :http-config-empty
                            :reason-list ["config" "map" "empty"]}))
+  (testing "config contains an unrecognized key"
+    (perform-request-test :request
+                          {:something "hello"}
+                          {:success     false
+                           :error-code  :http-config-unknown-key
+                           :reason-list ["unknown" "key" "config"]}))
   (testing "':method' key not defined"
     (perform-request-test :request
-                          {:something "x"}
+                          {:url "x"}
                           {:success     false
                            :error-code  :http-config-method-missing
                            :reason-list ["config must contain" "key" ":method"]}))
@@ -248,6 +259,12 @@
                            ;; not a nil-related error code because config gets merged with a get-related config
                            :error-code  :http-config-url-missing
                            :reason-list ["config" "URL" ":url"]}))
+  (testing "config contains an unrecognized key"
+    (perform-request-test :get
+                          {:something "hello"}
+                          {:success     false
+                           :error-code  :http-config-unknown-key
+                           :reason-list ["unknown" "key" "config"]}))
   (testing "':url' value not a string"
     (perform-request-test :get
                           {:url 1}
@@ -298,8 +315,8 @@
   (testing "success, 2 configs"
     (let [response {:status 200
                     :body   "body"}]
-      (perform-request-test :get config-url {:something "x"} {:success  true
-                                                              :response response} response))))
+      (perform-request-test :get config-url {:url "x"} {:success  true
+                                                        :response response} response))))
 
 
 (deftest post-test
@@ -369,5 +386,5 @@
   (testing "success, 2 configs"
     (let [response {:status 200
                     :body   "body"}]
-      (perform-request-test :post config-url {:something "x"} {:success  true
-                                                               :response response} response))))
+      (perform-request-test :post config-url {:url "x"} {:success  true
+                                                         :response response} response))))

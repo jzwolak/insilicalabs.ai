@@ -107,5 +107,5 @@
                                                                           (assoc :paused false)))
                                                           (recur "" updated-message-accumulator (inc chunk-num)))
                                   :else (handler-fn (update-error-response response (str "Unrecognized finish reason '" finish-reason "'."))))))
-          ; we ignore all other fields in the event
+          ; ignore all other fields in the event
           :else (recur data message-accumulator chunk-num))))))
