@@ -254,6 +254,14 @@
     - :http-request-failed             → The HTTP request failed.  See the `:response` key for reason phrase
                                          `:reason-phrase` and status code `:status` in the returned map.  The failure
                                          was not due to an exception.
+    - :request-config-missing-api-key  → The request configuration does not contain the key ':api-key' in map
+                                         ':auth-config'.
+    - :request-config-api-proj-org     → The request configuration contains one of key ':api-proj' or key ':api-org' in
+                                         map ':auth-config' but not the other.
+    - :request-config-model-missing    → The request configuration does not contain key ':model in map
+                                         ':request-config'.
+    - :request-config-messages-missing → The request configuration does not contain key ':messages' in map
+                                         ':request-config'.
     - :http-request-failed-ioexception → The HTTP request failed due to an `IOException`.  See `:exception` for the
                                          exception in the returned map.
     - :http-request-failed-exception   → The HTTP request failed due an `Exception`.  See `:exception` for the exception
@@ -266,7 +274,7 @@
          :or   {auth-config {} request-config {} prepared-request {}}} prepared-request]
     (if-not (contains? auth-config :api-key)
       {:success    false
-       :error-code :request-config-not-map
+       :error-code :request-config-missing-api-key
        :reason     "Request config does not contain key ':api-key' in map ':auth-config'."}
       (if (or
             (and

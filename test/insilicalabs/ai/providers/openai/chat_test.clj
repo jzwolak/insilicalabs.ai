@@ -393,7 +393,7 @@
           prepared-request (-> prepared-request
                                (assoc-in [:request-config :messages] []))]
       (perform-complete-request-test prepared-request {:success     false
-                                                       :error-code  :request-config-not-map
+                                                       :error-code  :request-config-missing-api-key
                                                        :reason-list ["Request config" ":api-key" ":auth-config"]})))
   (testing "invalid: api-proj but no api-org"
     (let [prepared-request (chat/create-prepared-request {:api-proj "myproj"} {} {:model "the-model"} {})

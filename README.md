@@ -107,6 +107,10 @@ expensive, then a delay may be useful as follows.
 | :http-request-failed             | The HTTP request failed.  See the `:response` key for reason phrase `:reason-phrase` and status code `:status` in the returned map.  The failure was not due to an exception. |
 | :http-request-failed-ioexception | The HTTP request failed due to an `IOException`.  See `:exception` for the exception in the returned map.                                                                     |
 | :http-request-failed-exception   | The HTTP request failed due an `Exception`.  See `:exception` for the exception in the returned map.                                                                          |
+| :request-config-missing-api-key  | The request configuration does not contain the key ':api-key' in map ':auth-config'.                                                                                          |
+| :request-config-api-proj-org     | The request configuration contains one of key ':api-proj' or key ':api-org' in map ':auth-config' but not the other.                                                          |
+| :request-config-model-missing    | The request configuration does not contain key ':model in map ':request-config'.                                                                                              |
+| :request-config-messages-missing | The request configuration does not contain key ':messages' in map ':request-config'.                                                                                          |
 | :request-failed-limit            | The response stopped due to the token limit being reached                                                                                                                     |
 | :request-failed-content-filter   | The response was blocked by the content filter for potentially sensitive or unsafe content                                                                                    |
 
