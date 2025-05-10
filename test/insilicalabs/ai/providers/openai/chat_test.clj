@@ -2,7 +2,15 @@
   (:require
     [clojure.test :refer :all]
     [insilicalabs.ai.providers.openai.chat :as chat]
+    [insilicalabs.ai.http :as http]
     [clojure.string :as str]))
+
+
+(defn is-every-substring
+  [string list]
+  (is (every? #(str/includes? (str/lower-case string) (str/lower-case %)) list)
+      (str "Expected reason substrings " list " to be in actual reason: " string)))
+
 
 
 (defn check-prepared-request-test
@@ -357,7 +365,89 @@
                                                  :response {:data {:choices [{:delta {:content "hi"}}]}}} ["hi"])))
 
 
-;; todo: complete-request
+(defn perform-complete-request-test
+  [prepared-request expected]
+  (with-redefs [http/post (fn [x] x)]
+    (let [complete-request #'chat/complete-request
+          actual (complete-request prepared-request)]
+      (if (:success expected)
+        (let [url-list-expected (:url-list expected)
+              expected (-> expected
+                           (dissoc :url-list)
+                           (dissoc :success))
+              url-actual (:url actual)
+              actual (dissoc actual :url)]
+          (is (= actual expected))
+          (is-every-substring url-actual url-list-expected))
+        (let [reason-actual (:reason actual)
+              actual (dissoc actual :reason)
+              reason-list (:reason-list expected)
+              expected (dissoc expected :reason-list)]
+          (is (= (actual expected)))
+          (is-every-substring reason-actual reason-list))))))
+
+
+(deftest complete-request-test
+  (testing "invalid: no api-key"
+    (let [prepared-request (chat/create-prepared-request {:model "the-model"})
+          prepared-request (-> prepared-request
+                               (assoc-in [:request-config :messages] []))]
+      (perform-complete-request-test prepared-request {:success     false
+                                                       :error-code  :request-config-not-map
+                                                       :reason-list ["Request config" ":api-key" ":auth-config"]})))
+  (testing "invalid: api-proj but no api-org"
+    (let [prepared-request (chat/create-prepared-request {:api-proj "myproj"} {} {:model "the-model"} {})
+          prepared-request (-> prepared-request
+                               (assoc-in [:auth-config :api-key] "ABC123")
+                               (assoc-in [:request-config :messages] []))]
+      (perform-complete-request-test prepared-request {:success     false
+                                                       :error-code  :request-config-api-proj-org
+                                                       :reason-list ["Request config" ":api-key" ":api-org" ":auth-config"]})))
+  (testing "invalid: api-org but no api-proj"
+    (let [prepared-request (chat/create-prepared-request {:api-org "myorg"} {} {:model "the-model"} {})
+          prepared-request (-> prepared-request
+                               (assoc-in [:auth-config :api-key] "ABC123")
+                               (assoc-in [:request-config :messages] []))]
+      (perform-complete-request-test prepared-request {:success     false
+                                                       :error-code  :request-config-api-proj-org
+                                                       :reason-list ["Request config" ":api-key" ":api-org" ":auth-config"]})))
+  (testing "invalid: no model"
+    (let [prepared-request (chat/create-prepared-request {})
+          prepared-request (-> prepared-request
+                               (assoc-in [:auth-config :api-key] "ABC123")
+                               (assoc-in [:request-config :messages] []))]
+      (perform-complete-request-test prepared-request {:success     false
+                                                       :error-code  :request-config-model-missing
+                                                       :reason-list ["Request config" ":model" ":request-config"]})))
+  (testing "invalid: no messages"
+    (let [prepared-request (chat/create-prepared-request {:model "the-model"})
+          prepared-request (-> prepared-request
+                               (assoc-in [:auth-config :api-key] "ABC123"))]
+      (perform-complete-request-test prepared-request {:success     false
+                                                       :error-code  :request-config-messages-missing
+                                                       :reason-list ["Request config" ":messages" ":request-config"]})))
+  (testing "valid: api-key, model, messages"
+    (let [prepared-request (chat/create-prepared-request {:model "the-model"})
+          prepared-request (-> prepared-request
+                               (assoc-in [:auth-config :api-key] "ABC123")
+                               (assoc-in [:request-config :messages] []))]
+      (perform-complete-request-test prepared-request {:success      true
+                                                       :url-list     ["https://api.openai.com" "chat/completions"]
+                                                       :content-type :json
+                                                       :accept       :json
+                                                       :headers      {"Authorization" "Bearer ABC123"}
+                                                       :body         "{\"model\":\"the-model\",\"messages\":[]}"})))
+  (testing "valid: api-key, api-proj, api-org, model, messages"
+    (let [prepared-request (chat/create-prepared-request {:api-org "myorg" :api-proj "myproj"} {} {:model "the-model"} {})
+          prepared-request (-> prepared-request
+                               (assoc-in [:auth-config :api-key] "ABC123")
+                               (assoc-in [:request-config :messages] []))]
+      (perform-complete-request-test prepared-request {:success      true
+                                                       :url-list     ["https://api.openai.com" "chat/completions"]
+                                                       :content-type :json
+                                                       :accept       :json
+                                                       :headers      {"Authorization" "Bearer ABC123", "OpenAI-Organization" "myorg", "OpenAI-Project" "myproj"}
+                                                       :body         "{\"model\":\"the-model\",\"messages\":[]}"}))))
 
 
 (deftest change-response-to-unsuccessful-test
@@ -376,8 +466,7 @@
         expected-reason-list (:reason-list expected)
         expected-adjusted (dissoc expected :reason-list)]
     (is (= actual-adjusted expected-adjusted))
-    (is (every? #(str/includes? (str/lower-case actual-reason) (str/lower-case %)) expected-reason-list)
-        (str "Expected reason substrings " expected-reason-list " to be in actual reason: " actual-reason))))
+    (is-every-substring actual-reason expected-reason-list)))
 
 
 (deftest check-response-errors-test

@@ -13,6 +13,12 @@
 (def ^:const config-url {:url "https://example.com"})
 
 
+(defn is-every-substring
+  [string list]
+  (is (every? #(str/includes? (str/lower-case string) (str/lower-case %)) list)
+      (str "Expected reason substrings " list " to be in actual reason: " string)))
+
+
 (defn perform-build-check-config-test
   [config expected]
   (let [build-check-config #'http/build-check-config
@@ -23,8 +29,7 @@
         (is (= actual expected) "actual does not equal expected"))
       (do
         (is (false? (:success actual)) ":success isn't 'false'")
-        (is (every? #(str/includes? (str/lower-case (:reason actual)) (str/lower-case %)) (:reason-list expected))
-            (str "Expected reason substrings " (:reason-list expected) " to be in actual reason: " (:reason actual)))
+        (is-every-substring (:reason actual) (:reason-list expected))
         (let [expected-adjusted (dissoc expected :reason-list)
               actual-adjusted (dissoc actual :reason)]
           (is (= actual-adjusted expected-adjusted) "actual does not equal expected"))))))
@@ -122,9 +127,8 @@
            (is (= actual expected) "actual does not equal expected"))
          (do
            (is (false? (:success actual)) ":success isn't 'false'")
-           (is (every? #(str/includes? (str/lower-case (:reason actual)) (str/lower-case %)) (:reason-list expected))
-               (str "Expected reason substrings " (:reason-list expected) " to be in actual reason: " (:reason actual)))
-           (let [_ 1]
+           (is-every-substring (:reason actual) (:reason-list expected))
+           (do
              (if (contains? expected :exception-msg)
                (is (= (.getMessage (:exception actual)) (:exception-msg expected)))))
            (let [expected-adjusted (-> expected

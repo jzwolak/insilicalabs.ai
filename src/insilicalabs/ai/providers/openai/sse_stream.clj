@@ -52,6 +52,8 @@
 ;; REQUIRED:
 ;;   - :success = true
 ;;   - :handler-fn defined
+;; todo: docs
+;; todo: tests
 (defn read-sse-stream
   [reader response handler-fn]
   (with-open [reader reader]

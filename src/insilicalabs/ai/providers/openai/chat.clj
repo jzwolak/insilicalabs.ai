@@ -196,7 +196,6 @@
         (mapv #(or (get-in % [:message :content]) "") choices)))))
 
 
-;; todo: tests
 (defn- ^:impure complete-request
   "Performs the HTTP request, based on the configuration in `prepared-request` for the OpenAI complete API and returns
   the response as a map.
@@ -213,12 +212,13 @@
     - :api-proj → the project, as a string; optional, but required if ':api-org is set'
     - :api-org  → the organization, as a string; optional, but required if ':api-proj' is set
 
-  The request configuration is required and must specify at least the model to be used.  The request configuration
-  specifies the parameters of API request.  The request configuration may consist of any key-value pair as defined in
-  the appropriate API to which the request will be submitted, with the JSON property in the API converted to a Clojure
-  keyword.  The 'stream' property to enable streaming cannot be set here and, if so, it is removed; set the 'stream'
-  property in the response configuration.  The 'messages' property should not be set; if so, it is removed.  The request
-  configuration is a map that consists of the keys:
+  The request configuration is required and must specify at least the model to be used and the messages that are part
+  of the requested completion.  The request configuration specifies the parameters of API request.  The request
+  configuration may consist of any key-value pair as defined in the appropriate API to which the request will be
+  submitted, with the JSON property in the API converted to a Clojure keyword.  The 'stream' property to enable
+  streaming cannot be set here and, if so, it is removed; set the 'stream' property in the response configuration.  The
+  'messages' property should not be set; if so, it is removed.  The request configuration is a map that consists of the
+  keys:
     - :model    → the model to use, as a string; required
     - :messages → a vector of one or more messages describing the conversation; required
 
@@ -262,16 +262,37 @@
   This function does not throw exceptions.  All exceptions are handled by returning a map with key ':success' set to
   'false', as above."
   [prepared-request]
-  ;; todo: check for: api-key, api-proj/api-org; model, and messages; unknown keys?
   (let [{:keys [auth-config request-config prepared-request]
          :or   {auth-config {} request-config {} prepared-request {}}} prepared-request]
-    (http/post
-      (-> prepared-request
-          (assoc :headers (create-headers auth-config))
-          (assoc :body (json/generate-string request-config))
-          (dissoc :auth-config)
-          (dissoc :request-config)
-          (dissoc :response-config)))))
+    (if-not (contains? auth-config :api-key)
+      {:success    false
+       :error-code :request-config-not-map
+       :reason     "Request config does not contain key ':api-key' in map ':auth-config'."}
+      (if (or
+            (and
+              (contains? auth-config :api-proj)
+              (not (contains? auth-config :api-org)))
+            (and
+              (contains? auth-config :api-org)
+              (not (contains? auth-config :api-proj))))
+        {:success    false
+         :error-code :request-config-api-proj-org
+         :reason     "Request config contains one of ':api-key' or ':api-org' in map ':auth-config' but not the other."}
+        (if-not (contains? request-config :model)
+          {:success    false
+           :error-code :request-config-model-missing
+           :reason     "Request config does not contain key ':model' in map ':request-config'."}
+          (if-not (contains? request-config :messages)
+            {:success    false
+             :error-code :request-config-messages-missing
+             :reason     "Request config does not contain key ':messages' in map ':request-config'."}
+            (http/post
+              (-> prepared-request
+                  (assoc :headers (create-headers auth-config))
+                  (assoc :body (json/generate-string request-config))
+                  (dissoc :auth-config)
+                  (dissoc :request-config)
+                  (dissoc :response-config)))))))))
 
 
 (defn- change-response-to-unsuccessful
@@ -339,6 +360,8 @@
 ;;       to set n > 1, only n = 1 is honored in streaming.
 ;;
 ;; see 'complete'
+;; todo: docs
+;; todo: tests
 (defn- complete-response
   [response request]
   (let [response (if (contains? (:response response) :headers)
@@ -423,6 +446,8 @@
 ;;     - possible that the 'delta' didn't have content, such as first and last chunks or finish_reason=tool_calls,
 ;;       function_call, stop
 ;;     - will not have multiple choices, so n = 0 always
+;; todo: docs
+;; todo: tests
 (defn ^:impure complete
   ([prepared-request api-key messages-or-user-message]
    (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
@@ -440,6 +465,8 @@
 ;;   - and gets the 0th choice for the chat completion
 ;; - the user message is not saved in 'messages' if the request fails; and of course, there's no assistant message saved
 ;; - successful message with finish_reason=stop for streaming returns data for the chat messages.  all other cases return nil.
+;; todo: docs
+;; todo: tests
 (defn ^:impure chat
   [prepared-request api-key messages user-message]
   (let [messages (or messages [])
