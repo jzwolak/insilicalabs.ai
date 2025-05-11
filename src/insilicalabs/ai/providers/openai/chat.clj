@@ -197,8 +197,8 @@
 
 
 (defn- ^:impure complete-request
-  "Performs the HTTP request, based on the configuration in `prepared-request` for the OpenAI complete API and returns
-  the response as a map.
+  "Performs an OpenAI API chat request, based on the configuration in `prepared-request` and returns the response as a
+  map.
 
   A prepared request is a map of four configurations, represented by maps, consisting of:  authentication, HTTP,
   request, and response configurations.  This function requires the authentication and request configurations; the
@@ -231,7 +231,7 @@
     :reason-phrase <string reason>
     :headers <string headers>
     :status <string status code>
-    :body <stringified JSON>
+    :body <stringified JSON> if non-streaming else a Reader if streaming
 
   On failure, the returned map contains key ':success' set to 'false', ':error-code' set to a keyword error code, and
   ':reason' set to a string reason for the error.  If a response was returned, then key ':response' is set to the HTTP
@@ -371,6 +371,45 @@
 ;; todo: docs
 ;; todo: tests
 (defn- complete-response
+  "Handles the response `response` from an OpenAI API chat request, based on configurations in the request `request`,
+  and returns the response as a map.
+
+  The request is required only if a handler function is specified to handle the response.  If so, then the request must
+  be a map with key sequence '[:response-config :handler-fn]' with value set to the handler function.  If this request
+  was a streaming request (key ':stream' in `response` is 'true'), then the handler function is required.
+
+  The response is expected to be that returned by `complete-request` via `complete` such that the response is a map.
+
+  If the response is successful based on the HTTP request (not based on the returned information in the response), then
+  the response must contain the following fields:
+    - :success  → 'true' to indicate successful request
+    - :stream   → 'true' if the request was a streaming request and 'false' otherwise
+    - :response → the HTTP response (see below)
+
+  The HTTP response in ':response' takes the form (selected fields shown):
+    :cached <nil for not cached>
+    :protocol-version <protocol version>
+    :cookies <cookies>
+    :reason-phrase <string reason>
+    :headers <string headers>
+    :status <string status code>
+    :body <stringified JSON> if non-streaming else a Reader if streaming
+
+  If the response failed based on the HTTP request (not based on the returned information in the response, if any), then
+  the response must contain the following fields unless otherwise noted:
+    - :success    → 'true' to indicate successful request
+    - :stream     → 'true' if the request was a streaming request and 'false' otherwise
+    - :error-code → a keyword that indicates the reason for the failure
+    - :reason     → a string that explains the reason for the failure
+    - :exception  → holds the exception object if an exception occurred; only set if an exception occurred
+
+  todo: now explain how the function processes the response and return values.  need to incorporate sse_stream's returns vals.
+  - also remember the (check-response-errors)
+
+  4 cases:
+    - stream: caller and handler response
+    - non-stream: can have handler or not
+  "
   [response request]
   (let [response (if (contains? (:response response) :headers)
                    (assoc-in response [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))

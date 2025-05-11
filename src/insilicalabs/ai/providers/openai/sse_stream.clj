@@ -54,7 +54,21 @@
 ;;   - :handler-fn defined
 ;; todo: docs
 ;; todo: tests
+;; todo: reader exception
 (defn read-sse-stream
+  "Reads the HTTP stream and processes the response from an OpenAI API chat completion request and returns a response as
+  a map.
+
+  The `reader` must be a reader on the HTTP response stream ot the OpenAI API chat completion request.  The `response`
+  is expected to be the HTTP response to the request; no requirements are based upon the response, but it is returned
+  with augmented information as the HTTP response.  The `handler-fn` is a function to handle the response.
+
+  Note that OpenAI's SSE streaming implementation supports only two data types: 'data: {JSON object}' and
+  'data: [DONE]'.  The data types 'event:', comment lines starting with ':', and fields 'retry:', 'id:', and 'name:' are
+  not supported.
+
+  todo: finish
+  "
   [reader response handler-fn]
   (with-open [reader reader]
     (loop [data ""
@@ -95,12 +109,14 @@
                                                                    (handler-fn (-> response
                                                                                    (assoc :stream-end false)
                                                                                    (assoc :paused true)
+                                                                                   (assoc :pause-code :tool-call)
                                                                                    (assoc :reason "Model paused to make a tool/function call")))
                                                                    (recur "" updated-message-accumulator (inc chunk-num)))
                                   (= "function_call" finish-reason) (do
                                                                       (handler-fn (-> response
                                                                                       (assoc :stream-end false)
                                                                                       (assoc :paused true)
+                                                                                      (assoc :pause-code :function-call)
                                                                                       (assoc :reason "Model paused to make a legacy tool/function call")))
                                                                       (recur "" updated-message-accumulator (inc chunk-num)))
                                   (= nil finish-reason) (do
