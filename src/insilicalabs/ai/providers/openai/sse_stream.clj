@@ -56,16 +56,40 @@
 ;; todo: tests
 ;; todo: reader exception
 (defn read-sse-stream
-  "Reads the HTTP stream and processes the response from an OpenAI API chat completion request and returns a response as
-  a map.
+  "Reads the HTTP stream and processes the streaming response from an OpenAI API chat completion request and returns a
+  response as a map.
 
-  The `reader` must be a reader on the HTTP response stream ot the OpenAI API chat completion request.  The `response`
+  The `reader` must be a reader on the HTTP response stream to the OpenAI API chat completion request.  The `response`
   is expected to be the HTTP response to the request; no requirements are based upon the response, but it is returned
-  with augmented information as the HTTP response.  The `handler-fn` is a function to handle the response.
+  with augmented information (see below) as the HTTP response.  The `handler-fn` is a function to handle the response.
 
   Note that OpenAI's SSE streaming implementation supports only two data types: 'data: {JSON object}' and
   'data: [DONE]'.  The data types 'event:', comment lines starting with ':', and fields 'retry:', 'id:', and 'name:' are
   not supported.
+
+  This function returns two types of responses:  one to the caller and one to handler function `handler-fn`.  Only one
+  response is returned to the caller when a terminal condition is met.  The returned response to the caller helps
+  facilitate the updating of chat messages as part of a conversation.  One or more responses are provided to the handler
+  function as data or error events occur.  Both response types are maps.
+
+  Successful responses are returned if all the following occur:
+    - no HTTP error occurred
+    - no stream reader exception occurred
+    - the content could be parsed into a valid JSON response
+    - the finish_reason was:
+      - 'stop'          → the model successfully generated a response; terminal condition
+      - 'tools_calls'   → paused to make a tool/function call
+      - 'function_call' → paused to make a legacy tool/function call
+      - nil             → a chunk of data was provided from the model
+
+  Unsuccessful responses are returned if any of the following occur.  All of these conditions are terminal.
+    - an HTTP error occurred
+    - a stream exception occurred
+    - the content could not be parsed into a valid JSON response
+    - the finish_reason was:
+      - 'length'         → the token limit was reached
+      - 'content_filter' → the response was blocked by the content filter
+      - unrecognized     → e.g., not 'length', 'content_filter', 'stop', 'tool_calls', or 'function_call'
 
   todo: finish
   "
