@@ -69,20 +69,44 @@
 
   This function returns two types of responses:  one to the caller and one to handler function `handler-fn`.  Only one
   response is returned to the caller when a terminal condition is met.  The returned response to the caller helps
-  facilitate the updating of chat messages as part of a conversation.  One or more responses are provided to the handler
-  function as data or error events occur.  Both response types are maps.
+  facilitate the understanding of the interaction, success or failure, such as updating of chat messages as part of a
+  conversation on success.  One or more responses are provided to the handler function as data or error events occur.
+  Both response types are maps.
 
-  Successful responses are returned if all the following occur:
+  Successful responses are returned if all the following occur.  The handler function receives all responses and the
+  caller receives only one response per call for the terminal condition.
     - no HTTP error occurred
     - no stream reader exception occurred
     - the content could be parsed into a valid JSON response
     - the finish_reason was:
       - 'stop'          → the model successfully generated a response; terminal condition
-      - 'tools_calls'   → paused to make a tool/function call
-      - 'function_call' → paused to make a legacy tool/function call
-      - nil             → a chunk of data was provided from the model
+      - 'tools_calls'   → paused to make a tool/function call; non-terminal condition
+      - 'function_call' → paused to make a legacy tool/function call; non-terminal condition
+      - nil             → a chunk of data was provided from the model; non-terminal condition
 
-  Unsuccessful responses are returned if any of the following occur.  All of these conditions are terminal.
+  Successful responses returned to the handler function are maps with the form:
+    - :success     → 'true' for a successful response
+    - :stream      → 'true' for a streamed response
+    - :response    → the `response` argument which should be the original HTTP response to the request
+        - :data    → chunk data, which could contain 0 or more tokens; a token could be a punctuation mark or part of
+                     a word or more
+    - :chunk-num   → the number of chunks received thus far, starting at zero
+    - :stream-end  → 'true' if a terminal condition and 'false' otherwise
+    - :paused      → 'true' if paused and 'false' otherwise
+    - :paused-code → the code describing the pause as either ':tool-call' for a tool/function call or ':function-call'
+                     for a legacy tool/function call; only set if ':paused' is 'true'
+    - :reason      → a string reason for why the model paused; only set on successful responses if ':paused' is 'true'
+    - :message     → the full message from the combined chunks; only set on a successful terminal condition
+
+  A successful response returned to the caller is a map with the form:
+    - :success    → 'true' for a successful response
+    - :stream     → 'true' for a streamed response
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+    - :message    → the full message from the combined chunks
+
+  Unsuccessful responses are returned, both to the handler function and the caller, if any of the following occur.  All
+  of these conditions are terminal.
     - an HTTP error occurred
     - a stream exception occurred
     - the content could not be parsed into a valid JSON response
@@ -91,7 +115,20 @@
       - 'content_filter' → the response was blocked by the content filter
       - unrecognized     → e.g., not 'length', 'content_filter', 'stop', 'tool_calls', or 'function_call'
 
+  Unsuccessful responses returned to the handler function are maps with the form:
+    - :success    → 'false' for an unsuccessful response
+    - :stream     → 'true' for a streamed response
+    - :response   → the `response` argument which should be the original HTTP response to the request
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+    - :reason     → string reason why the response failed
+
+  An unsuccessful responses returned to the caller is a map with the form:
+
+
   todo: finish
+    - return an unsuccessful response to the caller; does current caller depend on 'nil' return?
+    - reason-code? or is that done at a higher level?
   "
   [reader response handler-fn]
   (with-open [reader reader]
@@ -121,6 +158,8 @@
                                   (= "content_filter" finish-reason) (handler-fn (update-error-response response "The response was blocked by the content filter for potentially sensitive or unsafe content."))
                                   (= "stop" finish-reason) (do
                                                              (handler-fn (-> response
+                                                                             (assoc :success true)
+                                                                             (assoc :stream true)
                                                                              (assoc :stream-end true)
                                                                              (assoc :paused false)
                                                                              (assoc :message updated-message-accumulator)))
@@ -131,6 +170,8 @@
                                                               :message updated-message-accumulator})
                                   (= "tool_calls" finish-reason) (do
                                                                    (handler-fn (-> response
+                                                                                   (assoc :success true)
+                                                                                   (assoc :stream true)
                                                                                    (assoc :stream-end false)
                                                                                    (assoc :paused true)
                                                                                    (assoc :pause-code :tool-call)
@@ -138,6 +179,8 @@
                                                                    (recur "" updated-message-accumulator (inc chunk-num)))
                                   (= "function_call" finish-reason) (do
                                                                       (handler-fn (-> response
+                                                                                      (assoc :success true)
+                                                                                      (assoc :stream true)
                                                                                       (assoc :stream-end false)
                                                                                       (assoc :paused true)
                                                                                       (assoc :pause-code :function-call)
@@ -145,6 +188,8 @@
                                                                       (recur "" updated-message-accumulator (inc chunk-num)))
                                   (= nil finish-reason) (do
                                                           (handler-fn (-> response
+                                                                          (assoc :success true)
+                                                                          (assoc :stream true)
                                                                           (assoc :stream-end false)
                                                                           (assoc :paused false)))
                                                           (recur "" updated-message-accumulator (inc chunk-num)))
