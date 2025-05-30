@@ -10,7 +10,7 @@
     (is (= auth-config expected))))
 
 
-(deftest test-create-auth-config
+(deftest create-auth-config-test
   (testing "all arguments"
     (perform-create-auth-config-test "my project" "my organization" {:api-proj "my project"
                                                                      :api-org  "my organization"})))
@@ -22,7 +22,7 @@
     (is (= request-config expected))))
 
 
-(deftest test-create-request-config
+(deftest create-request-config-test
   (testing "all arguments"
     (perform-create-request-config-test "model-123" {:model "model-123"})))
 
@@ -40,7 +40,7 @@
 (defn a-handler-fn
   [])
 
-(deftest test-create-response-config
+(deftest create-response-config-test
   (testing "handler-fn only"
     (perform-create-response-config-test a-handler-fn {:handler-fn a-handler-fn}))
   (testing "all arguments"

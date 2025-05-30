@@ -1,6 +1,8 @@
 (ns insilicalabs.ai.providers.openai.sse-stream
   (:require [cheshire.core :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [insilicalabs.ai.providers.openai.constants :as constants]))
+
 
 ; SSE Stream - Server Sent Event Stream
 ;
@@ -17,61 +19,47 @@
 ;
 ; The following fn only partially handles this at the moment but this should be enough for OpenAI and an OpenAI proxy,
 ; which is what it was created for.
-;
 
 
-(defn- update-error-response
-  [response reason]
+(defn- update-handler-error-response
+  [response error-code reason]
   (-> response
-      (assoc :success :false)
+      (assoc :success false)
+      (assoc :error-code error-code)
       (assoc :reason reason)
-      (assoc :paused :false)
+      (assoc :paused false)
+      (assoc :stream  true)
       (assoc :stream-end true)))
 
 
+(defn- create-caller-error-response
+  [error-code reason]
+  {:success false
+   :error-code error-code
+   :reason reason
+   :paused false
+   :stream  true
+   :stream-end true})
 
-;; Recovers lines comprising a JSON object starting with 'data:', stopping on '[DONE]' and erroring on 'error:'.
-;; Parses the JSON, checks finish_reason:
-;;   - stops on 'stop'
-;;   - otherwise:
-;;     - parses JSON
-;;     - puts the parsed JSON at [:response :data]
-;;
-;; adds:
-;;   - :chunk-num = int (only present if success=true)
-;;   - :stream-end = true/false
-;;   - :paused = true/false
-;;     - :reason = reason paused (only present if paused=true; also used if success=false)
-;;   - :message = string full message, only if finish_reason=true
-;;
-;; if successful finish_reason=stop, then return to the caller a map with :message=accumuleated messages (along with
-;; typical full map, see below in "stop", but *not* :response key).  else nil.
-;;
-;; see notes in readme
-;;
-;; REQUIRED:
-;;   - :success = true
-;;   - :handler-fn defined
-;; todo: docs
-;; todo: tests
-;; todo: reader exception
+
 (defn read-sse-stream
   "Reads the HTTP stream and processes the streaming response from an OpenAI API chat completion request and returns a
   response as a map.
 
   The `reader` must be a reader on the HTTP response stream to the OpenAI API chat completion request.  The `response`
-  is expected to be the HTTP response to the request; no requirements are based upon the response, but it is returned
+  is expected to be the HTTP response to the request; no requirements are placed upon the response, but it is returned
   with augmented information (see below) as the HTTP response.  The `handler-fn` is a function to handle the response.
 
-  Note that OpenAI's SSE streaming implementation supports only two data types: 'data: {JSON object}' and
-  'data: [DONE]'.  The data types 'event:', comment lines starting with ':', and fields 'retry:', 'id:', and 'name:' are
-  not supported.
+  Note that OpenAI's Server Sent Event (SSE) streaming implementation supports only two data types:
+  'data: {JSON object}' and 'data: [DONE]'.  The data types 'event:', comment lines starting with ':', and fields
+  'retry:', 'id:', and 'name:' are not supported.
 
   This function returns two types of responses:  one to the caller and one to handler function `handler-fn`.  Only one
   response is returned to the caller when a terminal condition is met.  The returned response to the caller helps
   facilitate the understanding of the interaction, success or failure, such as updating of chat messages as part of a
   conversation on success.  One or more responses are provided to the handler function as data or error events occur.
-  Both response types are maps.
+  Both response types are maps.  Responses are provided to the handler function first, then a response is provider to
+  the caller.
 
   Successful responses are returned if all the following occur.  The handler function receives all responses and the
   caller receives only one response per call for the terminal condition.
@@ -93,17 +81,18 @@
     - :chunk-num   → the number of chunks received thus far, starting at zero
     - :stream-end  → 'true' if a terminal condition and 'false' otherwise
     - :paused      → 'true' if paused and 'false' otherwise
-    - :paused-code → the code describing the pause as either ':tool-call' for a tool/function call or ':function-call'
-                     for a legacy tool/function call; only set if ':paused' is 'true'
-    - :reason      → a string reason for why the model paused; only set on successful responses if ':paused' is 'true'
+    - :paused-code → the code describing the pause, set only if ':paused' is 'true, consisting of:
+      - ':tool-call' → a tool/function call is being made
+      - ':function-call' →  a legacy tool/function call is being made; only set if ':paused' is 'true'
+    - :reason      → a string reason for why the model paused; only set if ':paused' is 'true'
     - :message     → the full message from the combined chunks; only set on a successful terminal condition
 
   A successful response returned to the caller is a map with the form:
-    - :success    → 'true' for a successful response
-    - :stream     → 'true' for a streamed response
-    - :stream-end → 'true' to indicate a terminal condition
-    - :paused     → 'false' to indicate that the model is not paused
-    - :message    → the full message from the combined chunks
+    - :success     → 'true' for a successful response
+    - :stream      → 'true' for a streamed response
+    - :stream-end  → 'true' to indicate a terminal condition
+    - :paused      → 'false' to indicate that the model is not paused
+    - :message     → the full message from the combined chunks
 
   Unsuccessful responses are returned, both to the handler function and the caller, if any of the following occur.  All
   of these conditions are terminal.
@@ -121,14 +110,27 @@
     - :response   → the `response` argument which should be the original HTTP response to the request
     - :stream-end → 'true' to indicate a terminal condition
     - :paused     → 'false' to indicate that the model is not paused
+    - :error-code  → an error code indicating why the request failed; see listing of error codes below
     - :reason     → string reason why the response failed
 
   An unsuccessful responses returned to the caller is a map with the form:
+    - :success     → 'true' for a successful response
+    - :error-code  → an error code indicating why the request failed; see listing of error codes below
+    - :reason      → a string reason for why the request failed
+    - :stream      → 'true' for a streamed response
+    - :stream-end  → 'true' to indicate a terminal condition
+    - :paused      → 'false' to indicate that the model is not paused
 
+  Error codes:
+    - :stream-event-error            → an error event was received from the streamed response
+    - :stream-event-unknown          → an unknown event was received from the streamed response
+    - :request-failed-limit          → the response stopped due to the token limit being reached
+    - :request-failed-content-filter → the response was blocked by the content filter for potentially sensitive or
+                                       unsafe content
 
   todo: finish
-    - return an unsuccessful response to the caller; does current caller depend on 'nil' return?
-    - reason-code? or is that done at a higher level?
+    - json parse err
+    - reader err
   "
   [reader response handler-fn]
   (with-open [reader reader]
@@ -141,7 +143,9 @@
           (nil? line) (do #_nothing #_stream-finished)
           ; got data, append it and read next line
           (.startsWith line "data: ") (recur (str data (.substring line 6)) message-accumulator chunk-num)
-          (.startsWith line "error: ") (handler-fn (update-error-response response (str "Stream error." (.substring line 6))))
+          (.startsWith line "error: ") (let [message (str "Stream error." (.substring line 6))]
+                                         (handler-fn (update-handler-error-response response :stream-event-error message))
+                                         (create-caller-error-response :stream-event-error message))
           ; end of event, call handler to do something with data
           (str/blank? line) (when (not= "[DONE]" data)
                               (let [chunk-json (json/parse-string data keyword)
@@ -154,8 +158,12 @@
                                                                   (str message-accumulator chunk-content)
                                                                   message-accumulator)]
                                 (cond
-                                  (= "length" finish-reason) (handler-fn (update-error-response response "Response stopped due to token limit being reached."))
-                                  (= "content_filter" finish-reason) (handler-fn (update-error-response response "The response was blocked by the content filter for potentially sensitive or unsafe content."))
+                                  (= "length" finish-reason) (do
+                                                               (handler-fn (update-handler-error-response response constants/request-failed-limit-keyword constants/request-failed-limit-message))
+                                                               (create-caller-error-response constants/request-failed-limit-keyword constants/request-failed-limit-message))
+                                  (= "content_filter" finish-reason) (do
+                                                                       (handler-fn (update-handler-error-response response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message))
+                                                                       (create-caller-error-response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message))
                                   (= "stop" finish-reason) (do
                                                              (handler-fn (-> response
                                                                              (assoc :success true)
@@ -163,11 +171,11 @@
                                                                              (assoc :stream-end true)
                                                                              (assoc :paused false)
                                                                              (assoc :message updated-message-accumulator)))
-                                                             {:success true
-                                                              :stream true
+                                                             {:success    true
+                                                              :stream     true
                                                               :stream-end true
-                                                              :paused false
-                                                              :message updated-message-accumulator})
+                                                              :paused     false
+                                                              :message    updated-message-accumulator})
                                   (= "tool_calls" finish-reason) (do
                                                                    (handler-fn (-> response
                                                                                    (assoc :success true)
@@ -193,6 +201,8 @@
                                                                           (assoc :stream-end false)
                                                                           (assoc :paused false)))
                                                           (recur "" updated-message-accumulator (inc chunk-num)))
-                                  :else (handler-fn (update-error-response response (str "Unrecognized finish reason '" finish-reason "'."))))))
+                                  :else (let [message (str "Unknown stream event '" finish-reason "'.")]
+                                          (handler-fn (update-handler-error-response response :stream-event-unknown message))
+                                          (create-caller-error-response :stream-event-unknown message)))))
           ; ignore all other fields in the event
           :else (recur data message-accumulator chunk-num))))))

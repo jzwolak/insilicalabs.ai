@@ -3,7 +3,8 @@
     [clojure.string :as str]
     [cheshire.core :as json]
     [insilicalabs.ai.http :as http]
-    [insilicalabs.ai.providers.openai.sse-stream :as sse-stream]))
+    [insilicalabs.ai.providers.openai.sse-stream :as sse-stream]
+    [insilicalabs.ai.providers.openai.constants :as constants]))
 
 
 (def ^:const chat-completions-url-default "https://api.openai.com/v1/chat/completions")
@@ -312,7 +313,6 @@
       (assoc :error-code error-code)
       (assoc :reason reason)))
 
-
 (defn- check-response-errors
   "Checks for possible response errors in `response` and updates the response accordingly.
 
@@ -326,9 +326,9 @@
   [response]
   (let [finish-reason (get-in response [:response :finish_reason])]
     (if (= finish-reason "length")
-      (change-response-to-unsuccessful response :request-failed-limit "Response stopped due to token limit being reached.")
+      (change-response-to-unsuccessful response constants/request-failed-limit-keyword constants/request-failed-limit-message)
       (if (= finish-reason "content_filter")
-        (change-response-to-unsuccessful response :request-failed-content-filter "The response was blocked by the content filter for potentially sensitive or unsafe content.")
+        (change-response-to-unsuccessful response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message)
         response))))
 
 
