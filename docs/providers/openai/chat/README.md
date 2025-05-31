@@ -265,7 +265,7 @@ data: {
       "index": 0,
       "finish_reason": null
     }
-  
+  ]
 }
 
 data: {

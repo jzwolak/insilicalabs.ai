@@ -2,7 +2,9 @@
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [insilicalabs.ai.providers.openai.constants :as constants])
-  (:import [java.io IOException]))
+  (:import (com.fasterxml.jackson.core JsonParseException)
+           (com.fasterxml.jackson.databind JsonMappingException)
+           [java.io IOException]))
 
 
 ; SSE Stream - Server Sent Event Stream
@@ -23,6 +25,18 @@
 
 
 (defn- update-handler-error-response
+  "Updates the response `response` for an error condition, sufficient for sending to the handler.
+
+  The `response` is expected to be that from the HTTP request, but no requirements are placed on it for this function.
+
+  The returned updated response is a map containing:
+    - :success false           → to indicate that the request failed
+    - :error-code <error code> → the error code for the failure
+    - :reason <reason>         → the reason for the failure
+    - :paused false            → to indicate that the model is not paused
+    - :stream true             → to indicate the response was streaming
+    - :stream-end true         → to indicate the end of stream
+    - :exception <exception>   → the exception causing the failure; only set if calling the form using `exception`"
   ([response error-code reason]
    (update-handler-error-response response error-code reason nil))
   ([response error-code reason exception]
@@ -39,6 +53,16 @@
 
 
 (defn- create-caller-error-response
+  "Creates an error response, sufficient to send to the caller.
+
+  The error response is a map containing:
+    - :success false           → to indicate that the request failed
+    - :error-code <error code> → the error code for the failure
+    - :reason <reason>         → the reason for the failure
+    - :paused false            → to indicate that the model is not paused
+    - :stream true             → to indicate the response was streaming
+    - :stream-end true         → to indicate the end of stream
+    - :exception <exception>   → the exception causing the failure; only set if calling the form using `exception`"
   ([error-code reason]
    (create-caller-error-response error-code reason nil))
   ([error-code reason exception]
@@ -142,8 +166,9 @@
                                        unsafe content
 
   todo: finish
-    - json parse err
-    - reader err
+    - errs: length, content_filter, unknown stream event
+    - paused: tool_calls, function_call
+    - normal usage: stop
   "
   [reader response handler-fn]
   (with-open [reader reader]
@@ -171,61 +196,74 @@
                                            (create-caller-error-response :stream-event-error message))
             ; end of event, call handler to do something with data
             (str/blank? line) (when (not= "[DONE]" data)
-                                (let [chunk-json (json/parse-string data keyword)
-                                      finish-reason (get-in chunk-json [:choices 0 :finish_reason])
-                                      response (-> response
-                                                   (assoc-in [:response :data] chunk-json)
-                                                   (assoc :chunk-num chunk-num))
-                                      chunk-content (get-in chunk-json [:choices 0 :delta :content])
-                                      updated-message-accumulator (if (some? chunk-content)
-                                                                    (str message-accumulator chunk-content)
-                                                                    message-accumulator)]
-                                  (cond
-                                    (= "length" finish-reason) (do
-                                                                 (handler-fn (update-handler-error-response response constants/request-failed-limit-keyword constants/request-failed-limit-message))
-                                                                 (create-caller-error-response constants/request-failed-limit-keyword constants/request-failed-limit-message))
-                                    (= "content_filter" finish-reason) (do
-                                                                         (handler-fn (update-handler-error-response response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message))
-                                                                         (create-caller-error-response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message))
-                                    (= "stop" finish-reason) (do
-                                                               (handler-fn (-> response
-                                                                               (assoc :success true)
-                                                                               (assoc :stream true)
-                                                                               (assoc :stream-end true)
-                                                                               (assoc :paused false)
-                                                                               (assoc :message updated-message-accumulator)))
-                                                               {:success    true
-                                                                :stream     true
-                                                                :stream-end true
-                                                                :paused     false
-                                                                :message    updated-message-accumulator})
-                                    (= "tool_calls" finish-reason) (do
-                                                                     (handler-fn (-> response
-                                                                                     (assoc :success true)
-                                                                                     (assoc :stream true)
-                                                                                     (assoc :stream-end false)
-                                                                                     (assoc :paused true)
-                                                                                     (assoc :pause-code :tool-call)
-                                                                                     (assoc :reason "Model paused to make a tool/function call")))
-                                                                     (recur "" updated-message-accumulator (inc chunk-num)))
-                                    (= "function_call" finish-reason) (do
-                                                                        (handler-fn (-> response
-                                                                                        (assoc :success true)
-                                                                                        (assoc :stream true)
-                                                                                        (assoc :stream-end false)
-                                                                                        (assoc :paused true)
-                                                                                        (assoc :pause-code :function-call)
-                                                                                        (assoc :reason "Model paused to make a legacy tool/function call")))
-                                                                        (recur "" updated-message-accumulator (inc chunk-num)))
-                                    (= nil finish-reason) (do
-                                                            (handler-fn (-> response
-                                                                            (assoc :success true)
-                                                                            (assoc :stream true)
-                                                                            (assoc :stream-end false)
-                                                                            (assoc :paused false)))
-                                                            (recur "" updated-message-accumulator (inc chunk-num)))
-                                    :else (let [message (str "Unknown stream event '" finish-reason "'.")]
-                                            (handler-fn (update-handler-error-response response :stream-event-unknown message))
-                                            (create-caller-error-response :stream-event-unknown message)))))
+                                (let [chunk-json (try
+                                                   (json/parse-string data keyword)
+                                                   (catch JsonParseException e
+                                                     {:insilicalabs-exception e})
+                                                   (catch JsonMappingException e
+                                                     {:insilicalabs-exception e})
+                                                   (catch IOException e
+                                                     {:insilicalabs-exception e})
+                                                   (catch Exception e
+                                                     {:insilicalabs-exception e}))]
+                                  (if (contains? chunk-json :insilicalabs-exception)
+                                    (do
+                                      (handler-fn (update-handler-error-response response :parse-failed (str "The exception '" (.getName (class (:insilicalabs-exception chunk-json))) "' occurred while reading the stream." (str (.getMessage (:insilicalabs-exception chunk-json)))) (:insilicalabs-exception chunk-json)))
+                                      (create-caller-error-response :parse-failed (str "The exception '" (.getName (class (:insilicalabs-exception chunk-json))) "' occurred while reading the stream." (str (.getMessage (:insilicalabs-exception chunk-json)))) (:insilicalabs-exception chunk-json)))
+                                    (let [finish-reason (get-in chunk-json [:choices 0 :finish_reason])
+                                          response (-> response
+                                                       (assoc-in [:response :data] chunk-json)
+                                                       (assoc :chunk-num chunk-num))
+                                          chunk-content (get-in chunk-json [:choices 0 :delta :content])
+                                          updated-message-accumulator (if (some? chunk-content)
+                                                                        (str message-accumulator chunk-content)
+                                                                        message-accumulator)]
+                                      (cond
+                                        (= "length" finish-reason) (do
+                                                                     (handler-fn (update-handler-error-response response constants/request-failed-limit-keyword constants/request-failed-limit-message))
+                                                                     (create-caller-error-response constants/request-failed-limit-keyword constants/request-failed-limit-message))
+                                        (= "content_filter" finish-reason) (do
+                                                                             (handler-fn (update-handler-error-response response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message))
+                                                                             (create-caller-error-response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message))
+                                        (= "stop" finish-reason) (do
+                                                                   (handler-fn (-> response
+                                                                                   (assoc :success true)
+                                                                                   (assoc :stream true)
+                                                                                   (assoc :stream-end true)
+                                                                                   (assoc :paused false)
+                                                                                   (assoc :message updated-message-accumulator)))
+                                                                   {:success    true
+                                                                    :stream     true
+                                                                    :stream-end true
+                                                                    :paused     false
+                                                                    :message    updated-message-accumulator})
+                                        (= "tool_calls" finish-reason) (do
+                                                                         (handler-fn (-> response
+                                                                                         (assoc :success true)
+                                                                                         (assoc :stream true)
+                                                                                         (assoc :stream-end false)
+                                                                                         (assoc :paused true)
+                                                                                         (assoc :pause-code :tool-call)
+                                                                                         (assoc :reason "Model paused to make a tool/function call")))
+                                                                         (recur "" updated-message-accumulator (inc chunk-num)))
+                                        (= "function_call" finish-reason) (do
+                                                                            (handler-fn (-> response
+                                                                                            (assoc :success true)
+                                                                                            (assoc :stream true)
+                                                                                            (assoc :stream-end false)
+                                                                                            (assoc :paused true)
+                                                                                            (assoc :pause-code :function-call)
+                                                                                            (assoc :reason "Model paused to make a legacy tool/function call")))
+                                                                            (recur "" updated-message-accumulator (inc chunk-num)))
+                                        (= nil finish-reason) (do
+                                                                (handler-fn (-> response
+                                                                                (assoc :success true)
+                                                                                (assoc :stream true)
+                                                                                (assoc :stream-end false)
+                                                                                (assoc :paused false)))
+                                                                (recur "" updated-message-accumulator (inc chunk-num)))
+                                        :else (let [message (str "Unknown stream event '" finish-reason "'.")]
+                                                (handler-fn (update-handler-error-response response :stream-event-unknown message))
+                                                (create-caller-error-response :stream-event-unknown message)))))))
             ; ignore all other fields in the event
             :else (recur data message-accumulator chunk-num)))))))

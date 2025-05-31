@@ -8,6 +8,43 @@
     [java.io Reader BufferedReader IOException]))
 
 
+;; todo: will probably just copy this where needed so can modify values
+(def ^:const json-chunk
+  "{
+  \"id\": \"chatcmpl-abc123\",
+  \"object\": \"chat.completion.chunk\",
+  \"created\": 1677858244,
+  \"model\": \"gpt-4\",
+  \"choices\": [
+    {
+      \"delta\": {
+        \"content\": \"here\"
+      },
+      \"index\": 0,
+      \"finish_reason\": null
+    }
+  ]
+}")
+
+
+;; todo: will probably just copy this where needed so can modify values
+(def json-chunk-stop
+  "{
+  \"id\": \"chatcmpl-abc123\",
+  \"object\": \"chat.completion.chunk\",
+  \"created\": 1677858247,
+  \"model\": \"gpt-4\",
+  \"choices\": [
+    {
+      \"delta\": {},
+      \"index\": 0,
+      \"finish_reason\": \"stop\"
+    }
+  ]
+}")
+
+
+
 (defn is-every-substring
   [string list]
   (is (every? #(str/includes? (str/lower-case string) (str/lower-case %)) list)
@@ -176,5 +213,27 @@
                                      :stream      true
                                      :stream-end  true
                                      :reason-list reason-list}]
-      (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response))))
+      (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
+  (testing "json parse error"
+    (let [reader-input "data: {parse error}\n\n"
+          reader (get-reader reader-input)
+          response {:a 1}
+          reason-list ["JsonParseException"]
+          expected-caller-response {:success     false
+                                    :error-code  :parse-failed,
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list
+                                    :exception   true}
+          expected-handler-response {:a           1
+                                     :success     false
+                                     :error-code  :parse-failed,
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :reason-list reason-list
+                                     :exception   true}]
+      (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
+  )
 

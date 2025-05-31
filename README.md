@@ -113,6 +113,7 @@ expensive, then a delay may be useful as follows.
 | :request-config-messages-missing | The request configuration does not contain key ':messages' in map ':request-config'.                                                                                          |
 | :request-failed-limit            | The response stopped due to the token limit being reached                                                                                                                     |
 | :request-failed-content-filter   | The response was blocked by the content filter for potentially sensitive or unsafe content                                                                                    |
+| :parse-failed                    | An error occurred when parsing the response from the server to JSON                                                                                                           |
 | :stream-event-unknown            | During a streaming response, an unrecognized stream event was received                                                                                                        |
 | :stream-event-error              | During a streaming response, a stream error event was received                                                                                                                |
 | :stream-read-failed              | During a streaming response, a stream read exception occurred                                                                                                                 |
