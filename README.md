@@ -115,5 +115,8 @@ expensive, then a delay may be useful as follows.
 | :request-failed-content-filter   | The response was blocked by the content filter for potentially sensitive or unsafe content                                                                                    |
 | :stream-event-unknown            | During a streaming response, an unrecognized stream event was received                                                                                                        |
 | :stream-event-error              | During a streaming response, a stream error event was received                                                                                                                |
+| :stream-read-failed              | During a streaming response, a stream read exception occurred                                                                                                                 |
+
+
 
 
