@@ -53,6 +53,7 @@
   [actual expected]
   (is (= actual expected)))
 
+
 (defn perform-create-caller-error-response-test
   ([error-code reason expected]
    (let [create-caller-error-response #'stream/create-caller-error-response
@@ -103,25 +104,36 @@
         handler-fn (fn [resp] (reset! actual-handler-response resp))
 
         expected-caller-reason-list (:reason-list expected-caller-response)
-        expected-caller-response (dissoc expected-caller-response :reason-list)
+        expected-caller-response-had-exception (contains? expected-caller-response :exception)
+        expected-caller-response (-> expected-caller-response
+                                     (dissoc :exception)
+                                     (dissoc :reason-list))
 
         expected-handler-reason-list (:reason-list expected-handler-response)
-        expected-handler-response (dissoc expected-handler-response :reason-list)
+        expected-handler-response-had-exception (contains? expected-handler-response :exception)
+        expected-handler-response (-> expected-handler-response
+                                      (dissoc :exception)
+                                      (dissoc :reason-list))
 
         ;; do the function call
         actual-caller-response (stream/read-sse-stream reader response handler-fn)
+        actual-caller-response-had-exception (contains? actual-caller-response :exception)
+        actual-caller-response (dissoc actual-caller-response :exception)
 
         actual-caller-reason (:reason actual-caller-response)
         actual-caller-response (dissoc actual-caller-response :reason)
 
         actual-handler-reason (:reason @actual-handler-response)
+        actual-handler-response-had-exception (contains? @actual-handler-response :exception)
         actual-handler-response (-> @actual-handler-response
                                     (dissoc :reason)
                                     (dissoc :exception))]
 
     (is (= expected-caller-response actual-caller-response))
+    (is (= expected-caller-response-had-exception actual-caller-response-had-exception))
     (is-every-substring actual-caller-reason expected-caller-reason-list)
     (is (= expected-handler-response actual-handler-response))
+    (is (= expected-handler-response-had-exception actual-handler-response-had-exception))
     (is-every-substring actual-handler-reason expected-handler-reason-list)))
 
 
@@ -135,14 +147,16 @@
                                     :paused      false
                                     :stream      true
                                     :stream-end  true
-                                    :reason-list reason-list}
+                                    :reason-list reason-list
+                                    :exception   true}
           expected-handler-response {:a           1
                                      :success     false
                                      :error-code  :stream-read-failed
                                      :paused      false
                                      :stream      true
                                      :stream-end  true
-                                     :reason-list reason-list}]
+                                     :reason-list reason-list
+                                     :exception   true}]
       (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
   (testing "stream error event, where the stream provides a line:  error: <optional message>"
     (let [reader-input "error: An error occurred.\n"

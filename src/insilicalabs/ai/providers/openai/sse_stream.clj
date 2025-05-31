@@ -159,8 +159,8 @@
         (if (map? line)
           ;; if 'line' is a map, then an exception was thrown and caught, and 'line' contains information on the failure
           (do
-            (handler-fn (update-handler-error-response response :stream-read-failed (str "The exception '" (.getName (class (:exception line))) "' occurred while reading the stream." (:exception line))))
-            (create-caller-error-response :stream-read-failed (str "The exception '" (.getName (class (:exception line))) "' occurred while reading the stream." (:exception line))))
+            (handler-fn (update-handler-error-response response :stream-read-failed (str "The exception '" (.getName (class (:exception line))) "' occurred while reading the stream." (str (.getMessage (:exception line)))) (:exception line)))
+            (create-caller-error-response :stream-read-failed (str "The exception '" (.getName (class (:exception line))) "' occurred while reading the stream." (str (.getMessage (:exception line)))) (:exception line)))
           (cond
             ; EOF
             (nil? line) (do #_nothing #_stream-finished)
