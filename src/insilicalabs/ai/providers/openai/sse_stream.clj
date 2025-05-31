@@ -166,7 +166,6 @@
                                        unsafe content
 
   todo: finish
-    - errs: length, content_filter, unknown stream event
     - paused: tool_calls, function_call
     - normal usage: stop
   "
@@ -243,7 +242,7 @@
                                                                                          (assoc :stream true)
                                                                                          (assoc :stream-end false)
                                                                                          (assoc :paused true)
-                                                                                         (assoc :pause-code :tool-call)
+                                                                                         (assoc :paused-code :tool-call)
                                                                                          (assoc :reason "Model paused to make a tool/function call")))
                                                                          (recur "" updated-message-accumulator (inc chunk-num)))
                                         (= "function_call" finish-reason) (do
@@ -252,7 +251,7 @@
                                                                                             (assoc :stream true)
                                                                                             (assoc :stream-end false)
                                                                                             (assoc :paused true)
-                                                                                            (assoc :pause-code :function-call)
+                                                                                            (assoc :paused-code :function-call)
                                                                                             (assoc :reason "Model paused to make a legacy tool/function call")))
                                                                             (recur "" updated-message-accumulator (inc chunk-num)))
                                         (= nil finish-reason) (do

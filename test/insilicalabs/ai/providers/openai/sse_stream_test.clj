@@ -174,10 +174,35 @@
     (is-every-substring actual-handler-reason expected-handler-reason-list)))
 
 
+(defn perform-successful-read-sse-stream-test
+  [reader-input response expected-caller-response expected-handler-response]
+  (let [reader (get-reader reader-input)
+
+        actual-handler-response (atom nil)
+        handler-fn (fn [resp] (reset! actual-handler-response resp))
+
+        expected-handler-reason-list (:reason-list expected-handler-response)
+        expected-handler-response (-> expected-handler-response
+                                      (dissoc :reason-list))
+
+        ;; do the function call
+        actual-caller-response (stream/read-sse-stream reader response handler-fn)
+
+        actual-handler-reason (:reason @actual-handler-response)
+        actual-handler-response (-> @actual-handler-response
+                                    (dissoc :reason))]
+
+    (is (= expected-caller-response actual-caller-response))
+    (is (= expected-handler-response actual-handler-response))
+    (if (some? expected-handler-reason-list)
+      (is-every-substring actual-handler-reason expected-handler-reason-list)
+      (is (nil? actual-handler-reason)))))
+
+
 (deftest read-sse-stream-test
-  (testing "reader exception"
+  (testing "fail: reader exception"
     (let [reader (get-bad-reader)
-          response {:a 1}
+          response {:response {:a 1}}
           reason-list ["exception" "IOException" "while reading the stream"]
           expected-caller-response {:success     false
                                     :error-code  :stream-read-failed
@@ -186,7 +211,7 @@
                                     :stream-end  true
                                     :reason-list reason-list
                                     :exception   true}
-          expected-handler-response {:a           1
+          expected-handler-response {:response    {:a 1}
                                      :success     false
                                      :error-code  :stream-read-failed
                                      :paused      false
@@ -195,10 +220,10 @@
                                      :reason-list reason-list
                                      :exception   true}]
       (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
-  (testing "stream error event, where the stream provides a line:  error: <optional message>"
+  (testing "fail: stream error event, where the stream provides a line:  error: <optional message>"
     (let [reader-input "error: An error occurred.\n"
           reader (get-reader reader-input)
-          response {:a 1}
+          response {:response {:a 1}}
           reason-list ["stream error" "error occurred"]
           expected-caller-response {:success     false
                                     :error-code  :stream-event-error
@@ -206,7 +231,7 @@
                                     :stream      true
                                     :stream-end  true
                                     :reason-list reason-list}
-          expected-handler-response {:a           1
+          expected-handler-response {:response    {:a 1}
                                      :success     false
                                      :error-code  :stream-event-error
                                      :paused      false
@@ -214,10 +239,10 @@
                                      :stream-end  true
                                      :reason-list reason-list}]
       (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
-  (testing "json parse error"
+  (testing "fail: json parse error"
     (let [reader-input "data: {parse error}\n\n"
           reader (get-reader reader-input)
-          response {:a 1}
+          response {:response {:a 1}}
           reason-list ["JsonParseException"]
           expected-caller-response {:success     false
                                     :error-code  :parse-failed,
@@ -226,14 +251,135 @@
                                     :stream-end  true
                                     :reason-list reason-list
                                     :exception   true}
-          expected-handler-response {:a           1
+          expected-handler-response {:response    {:a 1}
                                      :success     false
-                                     :error-code  :parse-failed,
+                                     :error-code  :parse-failed
                                      :paused      false
                                      :stream      true
                                      :stream-end  true
                                      :reason-list reason-list
                                      :exception   true}]
       (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
+  (testing "fail: finish_reason 'length' error"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"length\"}]}\n\n"
+          reader (get-reader reader-input)
+          response {:response {:a 1}}
+          reason-list ["response" "stopped" "token" "limit"]
+          expected-caller-response {:success     false
+                                    :error-code  :request-failed-limit
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "length"}]}}
+                                     :success     false
+                                     :error-code  :request-failed-limit
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :chunk-num   0
+                                     :reason-list reason-list}]
+      (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
+  (testing "fail: finish_reason 'content_filter' error"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"content_filter\"}]}\n\n"
+          reader (get-reader reader-input)
+          response {:response {:a 1}}
+          reason-list ["response" "blocked" "content" "filter" "sensitive" "unsafe"]
+          expected-caller-response {:success     false
+                                    :error-code  :request-failed-content-filter
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "content_filter"}]}}
+                                     :success     false
+                                     :error-code  :request-failed-content-filter
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :chunk-num   0
+                                     :reason-list reason-list}]
+      (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
+  (testing "fail: finish_reason unknown error"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"blah\"}]}\n\n"
+          reader (get-reader reader-input)
+          response {:response {:a 1}}
+          reason-list ["unknown" "stream" "event"]
+          expected-caller-response {:success     false
+                                    :error-code  :stream-event-unknown
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "blah"}]}}
+                                     :success     false
+                                     :error-code  :stream-event-unknown
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :chunk-num   0
+                                     :reason-list reason-list}]
+      (perform-failed-read-sse-stream-test reader response expected-caller-response expected-handler-response)))
+  (testing "pause: tool_calls"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"tool_calls\"}]}\n\n"
+          response {:response {:a 1}}
+          expected-caller-response nil
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "tool_calls"}]}}
+                                     :success     true
+                                     :paused      true
+                                     :stream      true
+                                     :stream-end  false
+                                     :chunk-num   0
+                                     :paused-code :tool-call
+                                     :reason-list ["model" "paused" "tool" "function" "call"]}]
+      (perform-successful-read-sse-stream-test reader-input response expected-caller-response expected-handler-response)))
+  (testing "pause: function_call"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"function_call\"}]}\n\n"
+          response {:response {:a 1}}
+          expected-caller-response nil
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "function_call"}]}}
+                                     :success     true
+                                     :paused      true
+                                     :stream      true
+                                     :stream-end  false
+                                     :chunk-num   0
+                                     :paused-code :function-call
+                                     :reason-list ["model" "paused" "tool" "function" "call" "legacy"]}]
+      (perform-successful-read-sse-stream-test reader-input response expected-caller-response expected-handler-response)))
   )
 
