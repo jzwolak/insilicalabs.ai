@@ -111,12 +111,12 @@ expensive, then a delay may be useful as follows.
 | :request-config-api-proj-org     | The request configuration contains one of key ':api-proj' or key ':api-org' in map ':auth-config' but not the other.                                                          |
 | :request-config-model-missing    | The request configuration does not contain key ':model in map ':request-config'.                                                                                              |
 | :request-config-messages-missing | The request configuration does not contain key ':messages' in map ':request-config'.                                                                                          |
+| :parse-failed                    | An error occurred when parsing the response from the server to JSON                                                                                                           |
 | :request-failed-limit            | The response stopped due to the token limit being reached                                                                                                                     |
 | :request-failed-content-filter   | The response was blocked by the content filter for potentially sensitive or unsafe content                                                                                    |
-| :parse-failed                    | An error occurred when parsing the response from the server to JSON                                                                                                           |
+| :stream-read-failed              | During a streaming response, a stream read exception occurred                                                                                                                 |
 | :stream-event-unknown            | During a streaming response, an unrecognized stream event was received                                                                                                        |
 | :stream-event-error              | During a streaming response, a stream error event was received                                                                                                                |
-| :stream-read-failed              | During a streaming response, a stream read exception occurred                                                                                                                 |
 
 
 

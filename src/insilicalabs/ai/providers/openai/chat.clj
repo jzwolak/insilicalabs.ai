@@ -361,20 +361,6 @@
   (mapv (comp :content :message) (get-in response [:response :body :choices])))
 
 
-;; - for both streaming and non-streaming
-;;   - if headers exist, then converted to kebab keyword
-;; - if non-streaming
-;;   - and body exists, then parses json
-;;   - checks for errors indicated in the body json
-;;
-;; - streaming
-;;   - (:stream true) requires a handler-fn
-;;   - assumes 0th choice
-;;     - The n parameter (which controls how many completions to generate) is ignored in streaming mode. Even if you try
-;;       to set n > 1, only n = 1 is honored in streaming.
-;;
-;; see 'complete'
-;; todo: docs
 ;; todo: tests
 (defn- complete-response
   "Handles the response `response` from an OpenAI API chat request, based on configurations in the request `request`,
@@ -388,7 +374,7 @@
 
   If the response is successful based on the HTTP request (not based on the returned information in the response), then
   the response must contain the following fields:
-    - :success  → 'true' to indicate successful request
+    - :success  → 'true' to indicate a successful request
     - :stream   → 'true' if the request was a streaming request and 'false' otherwise
     - :response → the HTTP response (see below)
 
@@ -403,19 +389,146 @@
 
   If the response failed based on the HTTP request (not based on the returned information in the response, if any), then
   the response must contain the following fields unless otherwise noted:
-    - :success    → 'true' to indicate successful request
+    - :success    → 'false' to indicate an unsuccessful request
     - :stream     → 'true' if the request was a streaming request and 'false' otherwise
     - :error-code → a keyword that indicates the reason for the failure
     - :reason     → a string that explains the reason for the failure
     - :exception  → holds the exception object if an exception occurred; only set if an exception occurred
 
-  todo: now explain how the function processes the response and return values.  need to incorporate sse_stream's returns vals.
-  - also remember the (check-response-errors)
+  The following describes how the response is handled:
 
-  4 cases:
-    - stream: caller and handler response
-    - non-stream: can have handler or not
-  "
+  If the HTTP request received a response and contains HTTP headers at '[:response :headers]' in `response`, then those
+  header properties are converted to kebab-style keywords.
+
+  If this is a non-streaming request, then the HTTP response body at '[:response :body]' is parsed to JSON where
+  properties are converted to keywords.
+
+  For a streaming request, the stream is read until the end of the stream or an error occurs.
+
+  For both streaming and non-streaming requests:  a response is returned first to the handler function, if one is
+  defined (required for streaming, optional for non-streaming), then to the caller.
+
+  Successful responses are returned if all the following occur:
+    - no HTTP error occurred
+    - no stream reader exception occurred
+    - the content could be parsed into a valid JSON response
+    - the finish_reason was:
+      - 'stop'          → the model successfully generated a response; terminal condition
+      - 'tools_calls'   → paused to make a tool/function call; non-terminal condition, streaming only
+      - 'function_call' → paused to make a legacy tool/function call; non-terminal condition, streaming only
+      - nil             → a chunk of data was provided from the model; non-terminal condition, streaming only
+
+  NON-STREAMING successful response returned to the HANDLER FUNCTION or the CALLER if no handler function is defined is
+  a map:
+    - :success  → 'true' for a successful response
+    - :stream   → 'false' for a non-streamed response
+    - :response → the `response` argument which should be the original HTTP response to the request
+        - :body → response parsed as JSON using keywords for properties, which could contain 0 or more tokens; the
+                  content, if any, is at '[:response :body :choices n :message :content]'; 'n' refers to the index of
+                  the ':choice' which could be 1 or more; a token could be a punctuation mark or part of a word or more
+
+  NON-STREAMING successful response returned to the CALLER if no handler function is defined is a map:
+    - :success  → 'true' for a successful response
+    - :stream   → 'false' for a non-streamed response
+    - :messages → the list of messages from the response `response`
+
+  STREAMING successful response returned to the HANDLER FUNCTION is a map:
+    - :success     → 'true' for a successful response
+    - :stream      → 'true' for a streamed response
+    - :response    → the `response` argument which should be the original HTTP response to the request
+        - :data    → chunk data parsed to JSON converting properties to keywords, which could contain 0 or more tokens;
+                     the content, if any, is at '[:response :data :choices 0 :delta :content]'; '0' refers to the index
+                     of the ':choice' which is always 0 for a streamed response; a token could be a punctuation mark or
+                     part of a word or more
+    - :chunk-num   → the number of chunks received thus far, starting at zero
+    - :stream-end  → 'true' if a terminal condition and 'false' otherwise
+    - :paused      → 'true' if paused and 'false' otherwise
+    - :paused-code → the code describing the pause, set only if ':paused' is 'true, consisting of:
+      - ':tool-call' → a tool/function call is being made
+      - ':function-call' →  a legacy tool/function call is being made; only set if ':paused' is 'true'
+    - :reason      → a string reason for why the model paused; only set if ':paused' is 'true'
+    - :message     → the full message from the combined chunks; only set on a successful terminal condition
+
+  STREAMING successful response returned to the CALLER is a map:
+    - :success     → 'true' for a successful response
+    - :stream      → 'true' for a streamed response
+    - :stream-end  → 'true' to indicate a terminal condition
+    - :paused      → 'false' to indicate that the model is not paused
+    - :message     → the full message from the combined chunks
+
+  Unsuccessful responses are returned, both to the handler function (if defined) and the caller, if any of the following
+  occur.  All of these conditions are terminal.
+    - an HTTP error occurred
+    - a stream exception occurred
+    - the content could not be parsed into a valid JSON response
+    - the finish_reason was:
+      - 'length'         → the token limit was reached
+      - 'content_filter' → the response was blocked by the content filter
+      - unrecognized     → e.g., not 'length', 'content_filter', 'stop', 'tool_calls' (streaming only), or
+        'function_call'  (streaming only)
+
+  NON-STREAMING unsuccessful response returned to the HANDLER FUNCTION, if one is defined, and the CALLER is a map:
+    - :success    → 'false' to indicate an unsuccessful request
+    - :stream     → 'false' to indicate a non-streaming request
+    - :error-code → a keyword that indicates the reason for the failure (see below for error codes)
+    - :reason     → a string that explains the reason for the failure
+    - :response   → the response `response`
+    - :exception  → holds the exception object if an exception occurred; only set if an exception occurred
+
+  STREAMING Unsuccessful responses returned to the HANDLER FUNCTION are maps with the form:
+    - :success    → 'false' for an unsuccessful response
+    - :error-code → an error code indicating why the request failed; see listing of error codes below
+    - :reason     → string reason why the response failed
+    - :exception  → the exception that caused the failure; only set if an exception occurred and caused the failure
+    - :stream     → 'true' for a streamed response
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+    - :response   → the `response` argument which should be the original HTTP response to the request
+
+  STREAMING unsuccessful responses returned to the CALLER is a map with the form:
+    - :success    → 'true' for a successful response
+    - :error-code → an error code indicating why the request failed; see listing of error codes below
+    - :reason     → a string reason for why the request failed
+    - :exception  → the exception that caused the failure; only set if an exception occurred and caused the failure
+    - :stream     → 'true' for a streamed response
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+
+  In the case of a failure, the error code in the key ':error-code' provides a programmatic way to determine the cause
+  of the failure.  Error codes consist of:
+    - :http-config-nil                 → The HTTP configuration (and thus the entire configuration) was `nil`
+    - :http-config-not-map             → The HTTP configuration (and thus the entire configuration) was not a map
+    - :http-config-empty               → The HTTP configuration (and thus the entire configuration) was an empty map
+    - :http-config-unknown-key         → The HTTP configuration contained an unknown key
+    - :http-config-method-missing      → The HTTP configuration did not specify the `:method` key to define the HTTP
+                                         method, e.g. `GET` or `POST`
+    - :http-config-method-invalid      → The HTTP configuration `:method` key was not one of the valid values, either
+                                         `:get` or `:post`
+    - :http-config-url-missing         → The HTTP configuration did not specify the `:url` key to define the URL to
+                                         which to connect
+    - :http-config-url-not-string      → The HTTP configuration `:url` key was not a string
+    - :http-request-failed             → The HTTP request failed.  See the `:response` key for reason phrase
+                                         `:reason-phrase` and status code `:status` in the returned map.  The failure
+                                         was not due to an exception.
+    - :request-config-missing-api-key  → The request configuration does not contain the key ':api-key' in map
+                                         ':auth-config'.
+    - :request-config-api-proj-org     → The request configuration contains one of key ':api-proj' or key ':api-org' in
+                                         map ':auth-config' but not the other.
+    - :request-config-model-missing    → The request configuration does not contain key ':model in map
+                                         ':request-config'.
+    - :request-config-messages-missing → The request configuration does not contain key ':messages' in map
+                                         ':request-config'.
+    - :http-request-failed-ioexception → The HTTP request failed due to an `IOException`.  See `:exception` for the
+                                         exception in the returned map.
+    - :http-request-failed-exception   → The HTTP request failed due an `Exception`.  See `:exception` for the exception
+                                         in the returned map.
+    - :parse-failed                    → failed parsing the response as JSON
+    - :request-failed-limit            → the response stopped due to the token limit being reached
+    - :request-failed-content-filter   → the response was blocked by the content filter for potentially sensitive or
+                                         unsafe content
+    - :stream-read-failed              → an error occurred while reading the stream
+    - :stream-event-error              → an error event was received from the streamed response; streaming only
+    - :stream-event-unknown            → an unknown event was received from the streamed response; streaming only"
   [response request]
   (let [response (if (contains? (:response response) :headers)
                    (assoc-in response [:response :headers] (normalize-all-string-properties-to-kebab-keyword (get-in response [:response :headers])))
@@ -423,7 +536,18 @@
         handler-fn (get-in request [:response-config :handler-fn])]
     (if (:stream response)
       (let [reader (get-in response [:response :body])]
-        (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) handler-fn))
+        (if-not (:success response)
+          (let [handler-response (-> response
+                                     (assoc :stream true)
+                                     (assoc :stream-end true)
+                                     (assoc :paused false))
+                caller-response (-> response
+                                    (assoc :stream true)
+                                    (assoc :stream-end true)
+                                    (assoc :paused false))]
+            (handler-fn handler-response)
+            caller-response)
+          (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) handler-fn)))
       (let [response (cond-> response
                              (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
                              true (check-response-errors))]
@@ -491,7 +615,6 @@
 ;;   - :stream-end = true/false if stream has ended or not; only set if streaming
 ;;   - :chunk-num = int count of chunk; only set if streaming
 ;;
-;; todo: streaming keys set if err? depends on err?
 ;;
 ;; - Does not throw exceptions.  All exceptions are captured and returned as maps with :success = false.
 ;;

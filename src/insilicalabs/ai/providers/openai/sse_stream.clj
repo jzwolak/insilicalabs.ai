@@ -117,8 +117,10 @@
     - :success     → 'true' for a successful response
     - :stream      → 'true' for a streamed response
     - :response    → the `response` argument which should be the original HTTP response to the request
-        - :data    → chunk data, which could contain 0 or more tokens; a token could be a punctuation mark or part of
-                     a word or more
+        - :data    → chunk data parsed to JSON converting properties to keywords, which could contain 0 or more tokens;
+                     the content, if any, is at '[:response :data :choices 0 :delta :content]'; '0' refers to the index
+                     of the ':choice' which is always 0 for a streamed response; a token could be a punctuation mark or
+                     part of a word or more
     - :chunk-num   → the number of chunks received thus far, starting at zero
     - :stream-end  → 'true' if a terminal condition and 'false' otherwise
     - :paused      → 'true' if paused and 'false' otherwise
@@ -147,13 +149,13 @@
 
   Unsuccessful responses returned to the handler function are maps with the form:
     - :success    → 'false' for an unsuccessful response
-    - :stream     → 'true' for a streamed response
-    - :response   → the `response` argument which should be the original HTTP response to the request
-    - :stream-end → 'true' to indicate a terminal condition
-    - :paused     → 'false' to indicate that the model is not paused
     - :error-code → an error code indicating why the request failed; see listing of error codes below
     - :reason     → string reason why the response failed
     - :exception  → the exception that caused the failure; only set if an exception occurred and caused the failure
+    - :stream     → 'true' for a streamed response
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+    - :response   → the `response` argument which should be the original HTTP response to the request
 
   An unsuccessful responses returned to the caller is a map with the form:
     - :success    → 'true' for a successful response
@@ -164,16 +166,15 @@
     - :stream-end → 'true' to indicate a terminal condition
     - :paused     → 'false' to indicate that the model is not paused
 
-  Error codes:
+  In the case of a failure, the error code in the key ':error-code' provides a programmatic way to determine the cause
+  of the failure.  Error codes consist of:
+    - :stream-read-failed            → an error occurred while reading the stream
+    - :parse-failed                  → failed parsing the response as JSON
     - :stream-event-error            → an error event was received from the streamed response
     - :stream-event-unknown          → an unknown event was received from the streamed response
     - :request-failed-limit          → the response stopped due to the token limit being reached
     - :request-failed-content-filter → the response was blocked by the content filter for potentially sensitive or
-                                       unsafe content
-
-  todo: finish
-    - normal usage: stop
-  "
+                                       unsafe content"
   [reader response handler-fn]
   (with-open [reader reader]
     (loop [data ""
