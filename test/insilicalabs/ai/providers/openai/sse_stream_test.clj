@@ -1,3 +1,9 @@
+;; Copyright © 2025 Jason Zwolak
+;;
+;; This source code is licensed under the MIT License.
+;; See the LICENSE file in the root directory of this source tree for details.
+
+
 (ns insilicalabs.ai.providers.openai.sse-stream-test
   (:require
     [clojure.test :refer :all]
@@ -6,25 +12,6 @@
   (:import
     [java.io BufferedReader StringReader]
     [java.io Reader BufferedReader IOException]))
-
-
-;; todo: will probably just copy this where needed so can modify values
-(def ^:const json-chunk
-  "{
-  \"id\": \"chatcmpl-abc123\",
-  \"object\": \"chat.completion.chunk\",
-  \"created\": 1677858244,
-  \"model\": \"gpt-4\",
-  \"choices\": [
-    {
-      \"delta\": {
-        \"content\": \"here\"
-      },
-      \"index\": 0,
-      \"finish_reason\": null
-    }
-  ]
-}")
 
 
 (defn is-every-substring

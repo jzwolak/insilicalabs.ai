@@ -1,3 +1,9 @@
+;; Copyright © 2025 Jason Zwolak
+;;
+;; This source code is licensed under the MIT License.
+;; See the LICENSE file in the root directory of this source tree for details.
+
+
 (ns insilicalabs.ai.providers.openai.chat
   (:require
     [clojure.string :as str]
