@@ -27,24 +27,6 @@
 }")
 
 
-;; todo: will probably just copy this where needed so can modify values
-(def json-chunk-stop
-  "{
-  \"id\": \"chatcmpl-abc123\",
-  \"object\": \"chat.completion.chunk\",
-  \"created\": 1677858247,
-  \"model\": \"gpt-4\",
-  \"choices\": [
-    {
-      \"delta\": {},
-      \"index\": 0,
-      \"finish_reason\": \"stop\"
-    }
-  ]
-}")
-
-
-
 (defn is-every-substring
   [string list]
   (is (every? #(str/includes? (str/lower-case string) (str/lower-case %)) list)
@@ -381,5 +363,47 @@
                                      :paused-code :function-call
                                      :reason-list ["model" "paused" "tool" "function" "call" "legacy"]}]
       (perform-successful-read-sse-stream-test reader-input response expected-caller-response expected-handler-response)))
-  )
+  (testing "success: single chunk, finish_reason 'null'"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\"a chunk\"},\"index\":0,\"finish_reason\":null}]}\n\n"
+          response {:response {:a 1}}
+          expected-caller-response nil
+          expected-handler-response {:response   {:a    1
+                                                  :data {:id      "chatcmpl-abc123"
+                                                         :object  "chat.completion.chunk"
+                                                         :created 1677858244
+                                                         :model   "gpt-4"
+                                                         :choices [{:delta         {:content "a chunk"}
+                                                                    :index         0
+                                                                    :finish_reason nil}]}}
+                                     :success    true
+                                     :paused     false
+                                     :stream     true
+                                     :stream-end false
+                                     :chunk-num  0}]
+      (perform-successful-read-sse-stream-test reader-input response expected-caller-response expected-handler-response)))
+  (testing "success: two chunks (finish_reason 'null'), then done with 3rd chunk w/ finish_reason 'stop'"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\"A\"},\"index\":0,\"finish_reason\":null}]}\n
+data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\" chunk\"},\"index\":0,\"finish_reason\":null}]}\n
+data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+          response {:response {:a 1}}
+          expected-caller-response {:success    true
+                                    :stream     true
+                                    :stream-end true
+                                    :paused     false
+                                    :message    "A chunk"}
+          expected-handler-response {:response   {:a    1
+                                                  :data {:id      "chatcmpl-abc123"
+                                                         :object  "chat.completion.chunk"
+                                                         :created 1677858244
+                                                         :model   "gpt-4"
+                                                         :choices [{:delta         {}
+                                                                    :index         0
+                                                                    :finish_reason "stop"}]}}
+                                     :success    true
+                                     :paused     false
+                                     :stream     true
+                                     :stream-end true
+                                     :chunk-num  2
+                                     :message    "A chunk"}]
+      (perform-successful-read-sse-stream-test reader-input response expected-caller-response expected-handler-response))))
 

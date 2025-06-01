@@ -166,7 +166,6 @@
                                        unsafe content
 
   todo: finish
-    - paused: tool_calls, function_call
     - normal usage: stop
   "
   [reader response handler-fn]
