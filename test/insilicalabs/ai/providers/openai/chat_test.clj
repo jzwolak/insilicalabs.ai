@@ -476,18 +476,18 @@
 
 
 (deftest check-response-errors-test
-  (testing "no response errors"
-    (perform-check-response-errors-test {:response {:finish_reason "ok"}} {:response {:finish_reason "ok"}}))
-  (testing "err: length"
-    (perform-check-response-errors-test {:response {:finish_reason "length"}} {:response    {:finish_reason "length"}
-                                                                               :success     false
-                                                                               :error-code  :request-failed-limit
-                                                                               :reason-list ["token" "limit"]}))
-  (testing "err: content_filter"
-    (perform-check-response-errors-test {:response {:finish_reason "content_filter"}} {:response    {:finish_reason "content_filter"}
-                                                                                       :success     false
-                                                                                       :error-code  :request-failed-content-filter
-                                                                                       :reason-list ["blocked" "content" "filter"]})))
+  (testing "ok: 1 choice"
+    (perform-check-response-errors-test {:response {:body {:choices [{:finish_reason "stop"}]}}} {:response {:body {:choices [{:finish_reason "stop"}]}}}))
+  (testing "err: 1 choice, length"
+    (perform-check-response-errors-test {:response {:body {:choices [{:finish_reason "length"}]}}} {:response    {:body {:choices [{:finish_reason "length"}]}}
+                                                                                                    :success     false
+                                                                                                    :error-code  :request-failed-limit
+                                                                                                    :reason-list ["token" "limit"]}))
+  (testing "err: 1 choice, content_filter"
+    (perform-check-response-errors-test {:response {:body {:choices [{:finish_reason "content_filter"}]}}} {:response    {:body {:choices [{:finish_reason "content_filter"}]}}
+                                                                                                            :success     false
+                                                                                                            :error-code  :request-failed-content-filter
+                                                                                                            :reason-list ["blocked" "content" "filter"]})))
 
 (defn perform-normalize-string-to-kebab-keyword-test
   [property expected]
@@ -555,3 +555,247 @@
                                 :response {:body {:choices [{:message {:content "hi"}}
                                                             {:message {:content "hello"}}
                                                             {:message {:content "hey"}}]}}} ["hi" "hello" "hey"])))
+
+
+
+(defn perform-unsuccessful-complete-response-test
+  [response request use-handler-fn expected-caller-response expected-handler-response]
+  (let [actual-handler-response (atom nil)
+        handler-fn (fn [resp] (reset! actual-handler-response resp))
+
+        request (if use-handler-fn
+                  (assoc-in request [:response-config :handler-fn] handler-fn)
+                  request)
+
+        expected-caller-reason-list (:reason-list expected-caller-response)
+        expected-caller-response-had-exception (contains? expected-caller-response :exception)
+        expected-caller-response (-> expected-caller-response
+                                     (dissoc :exception)
+                                     (dissoc :reason-list))
+
+        expected-handler-reason-list (:reason-list expected-handler-response)
+        expected-handler-response-had-exception (contains? expected-handler-response :exception)
+        expected-handler-response (-> expected-handler-response
+                                      (dissoc :exception)
+                                      (dissoc :reason-list))
+
+        ;; do the function call
+        complete-response #'chat/complete-response
+        actual-caller-response (complete-response response request)
+        actual-caller-response-had-exception (contains? actual-caller-response :exception)
+        actual-caller-response (dissoc actual-caller-response :exception)
+
+        actual-caller-reason (:reason actual-caller-response)
+        actual-caller-response (dissoc actual-caller-response :reason)
+
+        actual-handler-reason (:reason @actual-handler-response)
+        actual-handler-response-had-exception (contains? @actual-handler-response :exception)
+        actual-handler-response (-> @actual-handler-response
+                                    (dissoc :reason)
+                                    (dissoc :exception))]
+
+    (is (= expected-caller-response actual-caller-response))
+    (is (= expected-caller-response-had-exception actual-caller-response-had-exception))
+    (is-every-substring actual-caller-reason expected-caller-reason-list)
+    (is (= expected-handler-response actual-handler-response))
+    (is (= expected-handler-response-had-exception actual-handler-response-had-exception))
+    (is-every-substring actual-handler-reason expected-handler-reason-list)
+    ))
+
+
+(defn perform-successful-complete-response-test
+  [response request use-handler-fn expected-caller-response expected-handler-response]
+  (let [actual-handler-response (atom nil)
+        handler-fn (fn [resp] (reset! actual-handler-response resp))
+
+        request (if use-handler-fn
+                  (assoc-in request [:response-config :handler-fn] handler-fn)
+                  request)
+
+        expected-caller-reason-list (:reason-list expected-caller-response)
+        expected-caller-response (-> expected-caller-response
+                                     (dissoc :reason-list))
+
+        expected-handler-reason-list (:reason-list expected-handler-response)
+        expected-handler-response (-> expected-handler-response
+                                      (dissoc :reason-list))
+
+        ;; do the function call
+        complete-response #'chat/complete-response
+        actual-caller-response (complete-response response request)
+
+        actual-caller-reason (:reason actual-caller-response)
+        actual-caller-response (dissoc actual-caller-response :reason)
+
+        actual-handler-reason (:reason @actual-handler-response)
+        actual-handler-response (-> @actual-handler-response
+                                    (dissoc :reason))]
+
+    (is (= expected-caller-response actual-caller-response))
+    (is (= expected-handler-response actual-handler-response))
+    (if (some? expected-handler-reason-list)
+      (is-every-substring actual-handler-reason expected-handler-reason-list)
+      (is (nil? actual-handler-reason)))))
+
+
+(deftest complete-response-test
+  ;;
+  ;; non-streaming
+  (testing "unsuccessful: no response headers or body; no handler"
+    (let [response {:success    false
+                    :error-code :http-config-nil
+                    :reason     "HTTP config was 'nil'."
+                    :stream     false
+                    :response   {:a 1}}
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :http-config-nil
+                                    :reason-list ["http" "config" "nil"]
+                                    :stream      false
+                                    :response    {:a 1}}
+          expected-handler-response nil]
+      (perform-unsuccessful-complete-response-test response request false expected-caller-response expected-handler-response)))
+  (testing "unsuccessful: no response headers or body; w/ handler"
+    (let [response {:success    false
+                    :error-code :http-config-nil
+                    :reason     "HTTP config was 'nil'"
+                    :stream     false
+                    :response   {:a 1}}
+          request {}
+          expected-caller-response {:success false
+                                    :stream  false}
+          expected-handler-response {:success     false
+                                     :error-code  :http-config-nil
+                                     :reason-list ["http" "config" "nil"]
+                                     :stream      false
+                                     :response    {:a 1}}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "unsuccessful: with response headers and body but no finish_reason error; no handler"
+    (let [response {:success    false
+                    :error-code :http-request-failed
+                    :reason     "The HTTP request failed."
+                    :stream     false
+                    :response   {:headers {"Server" "myserver"}
+                                 :body    "{\"a\":1}"}}
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :http-request-failed
+                                    :reason-list ["http" "request" "failed"]
+                                    :stream      false
+                                    :response    {:headers {:server "myserver"}
+                                                  :body    {:a 1}}}
+          expected-handler-response nil]
+      (perform-unsuccessful-complete-response-test response request false expected-caller-response expected-handler-response)))
+  (testing "unsuccessful: with response headers and body but no finish_reason error; w/ handler"
+    (let [response {:success    false
+                    :error-code :http-request-failed
+                    :reason     "The HTTP request failed."
+                    :stream     false
+                    :response   {:headers {"Server" "myserver"}
+                                 :body    "{\"a\":1}"}}
+          request {}
+          expected-caller-response {:success false
+                                    :stream  false}
+          expected-handler-response {:success     false
+                                     :error-code  :http-request-failed
+                                     :reason-list ["http" "request" "failed"]
+                                     :stream      false
+                                     :response    {:headers {:server "myserver"}
+                                                   :body    {:a 1}}}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "unsuccessful: with response headers and body, failed due to finish_reason error; no handler"
+    (let [response {:success  true
+                    :stream   false
+                    :response {:headers {"Server" "myserver"}
+                               :body    "{\"choices\":[{\"finish_reason\":\"length\"}]}"}}
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :request-failed-limit
+                                    :reason-list ["stopped" "token" "limit"]
+                                    :stream      false
+                                    :response    {:headers {:server "myserver"}
+                                                  :body    {:choices [{:finish_reason "length"}]}}}
+          expected-handler-response nil]
+      (perform-unsuccessful-complete-response-test response request false expected-caller-response expected-handler-response)))
+  (testing "unsuccessful: with response headers and body, failed due to finish_reason error; w/ handler"
+    (let [response {:success  true
+                    :stream   false
+                    :response {:headers {"Server" "myserver"}
+                               :body    "{\"choices\":[{\"finish_reason\":\"length\"}]}"}}
+          request {}
+          expected-caller-response {:success false
+                                    :stream  false}
+          expected-handler-response {:success     false
+                                     :error-code  :request-failed-limit
+                                     :reason-list ["stopped" "token" "limit"]
+                                     :stream      false
+                                     :response    {:headers {:server "myserver"}
+                                                   :body    {:choices [{:finish_reason "length"}]}}}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "successful: 1 content, no handler"
+    (let [response {:success  true
+                    :stream   false
+                    :response {:headers {"Server" "myserver"}
+                               :body    "{\"choices\":[{\"message\":{\"content\":\"Some content\"},\"finish_reason\":\"stop\"}]}"}}
+          request {}
+          expected-caller-response {:success  true
+                                    :stream   false
+                                    :response {:headers {:server "myserver"}
+                                               :body    {:choices [{:message       {:content "Some content"}
+                                                                    :finish_reason "stop"}]}}}
+          expected-handler-response nil]
+      (perform-successful-complete-response-test response request false expected-caller-response expected-handler-response)))
+  (testing "successful: 1 content, w/ handler"
+    (let [response {:success  true
+                    :stream   false
+                    :response {:headers {"Server" "myserver"}
+                               :body    "{\"choices\":[{\"message\":{\"content\":\"Some content\"},\"finish_reason\":\"stop\"}]}"}}
+          request {}
+          expected-caller-response {:success  true
+                                    :stream   false
+                                    :messages ["Some content"]}
+          expected-handler-response {:success  true
+                                     :stream   false
+                                     :response {:headers {:server "myserver"}
+                                                :body    {:choices [{:message       {:content "Some content"}
+                                                                     :finish_reason "stop"}]}}}]
+      (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "successful: 2 content, no handler"
+    (let [response {:success  true
+                    :stream   false
+                    :response {:headers {"Server" "myserver"}
+                               :body    "{\"choices\":[{\"message\":{\"content\":\"Some content\"},\"finish_reason\":\"stop\"},{\"message\":{\"content\":\"More content\"},\"finish_reason\":\"stop\"}]}"}}
+          request {}
+          expected-caller-response {:success  true
+                                    :stream   false
+                                    :response {:headers {:server "myserver"}
+                                               :body    {:choices [{:message       {:content "Some content"}
+                                                                    :finish_reason "stop"}
+                                                                   {:message       {:content "More content"}
+                                                                    :finish_reason "stop"}]}}}
+          expected-handler-response nil]
+      (perform-successful-complete-response-test response request false expected-caller-response expected-handler-response)))
+  (testing "successful: 2 content, w/ handler"
+    (let [response {:success  true
+                    :stream   false
+                    :response {:headers {"Server" "myserver"}
+                               :body    "{\"choices\":[{\"message\":{\"content\":\"Some content\"},\"finish_reason\":\"stop\"},{\"message\":{\"content\":\"More content\"},\"finish_reason\":\"stop\"}]}"}}
+          request {}
+          expected-caller-response {:success  true
+                                    :stream   false
+                                    :messages ["Some content"
+                                               "More content"]}
+          expected-handler-response {:success  true
+                                     :stream   false
+                                     :response {:headers {:server "myserver"}
+                                                :body    {:choices [{:message       {:content "Some content"}
+                                                                     :finish_reason "stop"}
+                                                                    {:message       {:content "More content"}
+                                                                     :finish_reason "stop"}]}}}]
+      (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
+
+
+  ;;
+  ;; streaming
+
+  )

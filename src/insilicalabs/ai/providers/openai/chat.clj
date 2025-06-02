@@ -319,23 +319,29 @@
       (assoc :error-code error-code)
       (assoc :reason reason)))
 
+
 (defn- check-response-errors
-  "Checks for possible response errors in `response` and updates the response accordingly.
+  "Checks `response` for all choices in [:response :body :choices] for a finish_reason of 'length' or 'content_filter'.
+  If found, marks the response as unsuccessful and includes error details based on the reason for the first match
+  found to an error condition based on the 'finish_reason'.
 
-  Checks for errors at [:response :finish_reason] for conditions of 'length' or 'content_filter' which indicates an
-  error occurred.  If so, changes the response to unsuccessful by setting ':success' to 'false', ':error-code to the
-  error code as below, and ':reason' to a reason for the failure.
-
-  The error codes are assigned per finish_reason as follows:
+    The error codes are assigned per finish_reason as follows:
     - length         → :request-failed-limit
     - content_filter → :request-failed-content-filter"
   [response]
-  (let [finish-reason (get-in response [:response :finish_reason])]
-    (if (= finish-reason "length")
-      (change-response-to-unsuccessful response constants/request-failed-limit-keyword constants/request-failed-limit-message)
-      (if (= finish-reason "content_filter")
-        (change-response-to-unsuccessful response constants/request-failed-content-filter-keyword constants/request-failed-content-filter-message)
-        response))))
+  (let [choices (get-in response [:response :body :choices])
+        match   (some #(let [reason (:finish_reason %)]
+                         (when (#{"length" "content_filter"} reason)
+                           reason))
+                      choices)]
+    (case match
+      "length"         (change-response-to-unsuccessful response
+                                                        constants/request-failed-limit-keyword
+                                                        constants/request-failed-limit-message)
+      "content_filter" (change-response-to-unsuccessful response
+                                                        constants/request-failed-content-filter-keyword
+                                                        constants/request-failed-content-filter-message)
+      response)))
 
 
 (defn- normalize-string-to-kebab-keyword [k]
@@ -475,7 +481,7 @@
     - :response   → the response `response`
     - :exception  → holds the exception object if an exception occurred; only set if an exception occurred
 
-  STREAMING Unsuccessful responses returned to the HANDLER FUNCTION are maps with the form:
+  STREAMING unsuccessful responses returned to the HANDLER FUNCTION are maps with the form:
     - :success    → 'false' for an unsuccessful response
     - :error-code → an error code indicating why the request failed; see listing of error codes below
     - :reason     → string reason why the response failed
