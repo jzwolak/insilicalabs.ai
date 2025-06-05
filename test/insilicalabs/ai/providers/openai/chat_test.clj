@@ -9,7 +9,8 @@
     [clojure.test :refer :all]
     [insilicalabs.ai.providers.openai.chat :as chat]
     [insilicalabs.ai.http :as http]
-    [clojure.string :as str]))
+    [clojure.string :as str])
+  (:import (java.io BufferedReader IOException Reader StringReader)))
 
 
 (defn is-every-substring
@@ -557,6 +558,25 @@
                                                             {:message {:content "hey"}}]}}} ["hi" "hello" "hey"])))
 
 
+(defn get-reader
+  [reader-input]
+  (BufferedReader. (StringReader. reader-input)))
+
+
+(defn get-bad-reader
+  []
+  (BufferedReader.
+    (proxy [Reader] []
+      (read
+        ([^chars cbuf ^Integer off ^Integer len]
+         (throw (IOException. "Simulated read failure"))))
+      (close [] nil))))
+
+
+(defn add-reader-to-response
+  [response reader]
+  (assoc-in response [:response :body] reader))
+
 
 (defn perform-unsuccessful-complete-response-test
   [response request use-handler-fn expected-caller-response expected-handler-response]
@@ -599,8 +619,7 @@
     (is-every-substring actual-caller-reason expected-caller-reason-list)
     (is (= expected-handler-response actual-handler-response))
     (is (= expected-handler-response-had-exception actual-handler-response-had-exception))
-    (is-every-substring actual-handler-reason expected-handler-reason-list)
-    ))
+    (is-every-substring actual-handler-reason expected-handler-reason-list)))
 
 
 (defn perform-successful-complete-response-test
@@ -641,7 +660,7 @@
 (deftest complete-response-test
   ;;
   ;; non-streaming
-  (testing "unsuccessful: no response headers or body; no handler"
+  (testing "non-streaming: input response unsuccessful: no response headers or body; no handler"
     (let [response {:success    false
                     :error-code :http-config-nil
                     :reason     "HTTP config was 'nil'."
@@ -655,7 +674,7 @@
                                     :response    {:a 1}}
           expected-handler-response nil]
       (perform-unsuccessful-complete-response-test response request false expected-caller-response expected-handler-response)))
-  (testing "unsuccessful: no response headers or body; w/ handler"
+  (testing "non-streaming: input response unsuccessful: no response headers or body; w/ handler"
     (let [response {:success    false
                     :error-code :http-config-nil
                     :reason     "HTTP config was 'nil'"
@@ -670,7 +689,7 @@
                                      :stream      false
                                      :response    {:a 1}}]
       (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
-  (testing "unsuccessful: with response headers and body but no finish_reason error; no handler"
+  (testing "non-streaming: input response unsuccessful: with response headers and body but no finish_reason error; no handler"
     (let [response {:success    false
                     :error-code :http-request-failed
                     :reason     "The HTTP request failed."
@@ -686,7 +705,7 @@
                                                   :body    {:a 1}}}
           expected-handler-response nil]
       (perform-unsuccessful-complete-response-test response request false expected-caller-response expected-handler-response)))
-  (testing "unsuccessful: with response headers and body but no finish_reason error; w/ handler"
+  (testing "non-streaming: input response unsuccessful: with response headers and body but no finish_reason error; w/ handler"
     (let [response {:success    false
                     :error-code :http-request-failed
                     :reason     "The HTTP request failed."
@@ -703,7 +722,7 @@
                                      :response    {:headers {:server "myserver"}
                                                    :body    {:a 1}}}]
       (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
-  (testing "unsuccessful: with response headers and body, failed due to finish_reason error; no handler"
+  (testing "non-streaming: unsuccessful: with response headers and body, failed due to finish_reason error; no handler"
     (let [response {:success  true
                     :stream   false
                     :response {:headers {"Server" "myserver"}
@@ -717,7 +736,7 @@
                                                   :body    {:choices [{:finish_reason "length"}]}}}
           expected-handler-response nil]
       (perform-unsuccessful-complete-response-test response request false expected-caller-response expected-handler-response)))
-  (testing "unsuccessful: with response headers and body, failed due to finish_reason error; w/ handler"
+  (testing "non-streaming: unsuccessful: with response headers and body, failed due to finish_reason error; w/ handler"
     (let [response {:success  true
                     :stream   false
                     :response {:headers {"Server" "myserver"}
@@ -732,7 +751,7 @@
                                      :response    {:headers {:server "myserver"}
                                                    :body    {:choices [{:finish_reason "length"}]}}}]
       (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
-  (testing "successful: 1 content, no handler"
+  (testing "non-streaming: successful: 1 content, no handler"
     (let [response {:success  true
                     :stream   false
                     :response {:headers {"Server" "myserver"}
@@ -745,7 +764,7 @@
                                                                     :finish_reason "stop"}]}}}
           expected-handler-response nil]
       (perform-successful-complete-response-test response request false expected-caller-response expected-handler-response)))
-  (testing "successful: 1 content, w/ handler"
+  (testing "non-streaming: successful: 1 content, w/ handler"
     (let [response {:success  true
                     :stream   false
                     :response {:headers {"Server" "myserver"}
@@ -760,7 +779,7 @@
                                                 :body    {:choices [{:message       {:content "Some content"}
                                                                      :finish_reason "stop"}]}}}]
       (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
-  (testing "successful: 2 content, no handler"
+  (testing "non-streaming: successful: 2 content, no handler"
     (let [response {:success  true
                     :stream   false
                     :response {:headers {"Server" "myserver"}
@@ -775,7 +794,7 @@
                                                                     :finish_reason "stop"}]}}}
           expected-handler-response nil]
       (perform-successful-complete-response-test response request false expected-caller-response expected-handler-response)))
-  (testing "successful: 2 content, w/ handler"
+  (testing "non-streaming: successful: 2 content, w/ handler"
     (let [response {:success  true
                     :stream   false
                     :response {:headers {"Server" "myserver"}
@@ -793,9 +812,287 @@
                                                                     {:message       {:content "More content"}
                                                                      :finish_reason "stop"}]}}}]
       (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
-
-
   ;;
   ;; streaming
-
-  )
+  (testing "streaming: input response unsuccessful: no response headers or body"
+    (let [response {:success    false
+                    :error-code :http-config-nil
+                    :reason     "HTTP config was 'nil'."
+                    :stream     true
+                    :response   {:a 1}}
+          response (add-reader-to-response response (get-bad-reader))
+          reason-list ["http" "config" "nil"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :http-config-nil
+                                    :reason-list reason-list
+                                    :stream      true
+                                    :stream-end  true
+                                    :paused      false
+                                    :response    {:a 1}}
+          expected-handler-response {:success     false
+                                     :error-code  :http-config-nil
+                                     :reason-list reason-list
+                                     :stream      true
+                                     :stream-end  true
+                                     :paused      false
+                                     :response    {:a 1}}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: unsuccessful: reader exception"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          response (add-reader-to-response response (get-bad-reader))
+          reason-list ["exception" "IOException" "while reading the stream"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :stream-read-failed
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list
+                                    :exception   true}
+          expected-handler-response {:response    {:a 1}
+                                     :success     false
+                                     :error-code  :stream-read-failed
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :reason-list reason-list
+                                     :exception   true}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: unsuccessful: stream error event, where the stream provides a line:  error: <optional message>"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "error: An error occurred.\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          reason-list ["stream error" "error occurred"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :stream-event-error
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a 1}
+                                     :success     false
+                                     :error-code  :stream-event-error
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :reason-list reason-list}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: unsuccessful: json parse error"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {parse error}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          reason-list ["JsonParseException"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :parse-failed
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list
+                                    :exception   true}
+          expected-handler-response {:response    {:a 1}
+                                     :success     false
+                                     :error-code  :parse-failed
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :reason-list reason-list
+                                     :exception   true}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: unsuccessful: finish_reason 'length' error"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"length\"}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          reason-list ["response" "stopped" "token" "limit"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :request-failed-limit
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "length"}]}}
+                                     :success     false
+                                     :error-code  :request-failed-limit
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :chunk-num   0
+                                     :reason-list reason-list}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: unsuccessful: finish_reason 'content_filter' error"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"content_filter\"}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          reason-list ["response" "blocked" "content" "filter" "sensitive" "unsafe"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :request-failed-content-filter
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "content_filter"}]}}
+                                     :success     false
+                                     :error-code  :request-failed-content-filter
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :chunk-num   0
+                                     :reason-list reason-list}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: unsuccessful: finish_reason unknown error"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"blah\"}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          reason-list ["unknown" "stream" "event"]
+          request {}
+          expected-caller-response {:success     false
+                                    :error-code  :stream-event-unknown
+                                    :paused      false
+                                    :stream      true
+                                    :stream-end  true
+                                    :reason-list reason-list}
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "blah"}]}}
+                                     :success     false
+                                     :error-code  :stream-event-unknown
+                                     :paused      false
+                                     :stream      true
+                                     :stream-end  true
+                                     :chunk-num   0
+                                     :reason-list reason-list}]
+      (perform-unsuccessful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: pause: tool_calls"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"tool_calls\"}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          request {}
+          expected-caller-response nil
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "tool_calls"}]}}
+                                     :success     true
+                                     :paused      true
+                                     :stream      true
+                                     :stream-end  false
+                                     :chunk-num   0
+                                     :paused-code :tool-call
+                                     :reason-list ["model" "paused" "tool" "function" "call"]}]
+      (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: pause: function_call"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858247,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0, \"finish_reason\":\"function_call\"}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          request {}
+          expected-caller-response nil
+          expected-handler-response {:response    {:a    1
+                                                   :data {:id      "chatcmpl-abc123"
+                                                          :object  "chat.completion.chunk"
+                                                          :created 1677858247
+                                                          :model   "gpt-4"
+                                                          :choices [{:delta         {}
+                                                                     :index         0
+                                                                     :finish_reason "function_call"}]}}
+                                     :success     true
+                                     :paused      true
+                                     :stream      true
+                                     :stream-end  false
+                                     :chunk-num   0
+                                     :paused-code :function-call
+                                     :reason-list ["model" "paused" "tool" "function" "call" "legacy"]}]
+      (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: success: single chunk, finish_reason 'null'"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\"a chunk\"},\"index\":0,\"finish_reason\":null}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          request {}
+          expected-caller-response nil
+          expected-handler-response {:response   {:a    1
+                                                  :data {:id      "chatcmpl-abc123"
+                                                         :object  "chat.completion.chunk"
+                                                         :created 1677858244
+                                                         :model   "gpt-4"
+                                                         :choices [{:delta         {:content "a chunk"}
+                                                                    :index         0
+                                                                    :finish_reason nil}]}}
+                                     :success    true
+                                     :paused     false
+                                     :stream     true
+                                     :stream-end false
+                                     :chunk-num  0}]
+      (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response)))
+  (testing "streaming: success: two chunks (finish_reason 'null'), then done with 3rd chunk w/ finish_reason 'stop'"
+    (let [response {:success  true
+                    :stream   true
+                    :response {:a 1}}
+          reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\"A\"},\"index\":0,\"finish_reason\":null}]}\n
+data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\" chunk\"},\"index\":0,\"finish_reason\":null}]}\n
+data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+          response (add-reader-to-response response (get-reader reader-input))
+          request {}
+          expected-caller-response {:success    true
+                                    :stream     true
+                                    :stream-end true
+                                    :paused     false
+                                    :message    "A chunk"}
+          expected-handler-response {:response   {:a    1
+                                                  :data {:id      "chatcmpl-abc123"
+                                                         :object  "chat.completion.chunk"
+                                                         :created 1677858244
+                                                         :model   "gpt-4"
+                                                         :choices [{:delta         {}
+                                                                    :index         0
+                                                                    :finish_reason "stop"}]}}
+                                     :success    true
+                                     :paused     false
+                                     :stream     true
+                                     :stream-end true
+                                     :chunk-num  2
+                                     :message    "A chunk"}]
+      (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response))))

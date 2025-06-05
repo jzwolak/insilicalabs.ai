@@ -151,8 +151,9 @@
 
 (defn- create-messages-from-messages-or-user-message
   "Returns a vector representing the conversation (e.g., messages) to submit as part of a request.  If
-  `messages-or-user-message` is a string, then returns a messages vector with the `messages-or-user-message` added as
-  a user message per 'create-messages'; else, `messages-or-user-message` is returned as-is."
+  `messages-or-user-message` is 'nil' then returns an empty vector.  If it is a string, then returns a messages vector
+  with the `messages-or-user-message` added as a user message per 'create-messages'; else, `messages-or-user-message` is
+  returned unchanged."
   [messages-or-user-message]
   (if (nil? messages-or-user-message)
     []
@@ -330,14 +331,14 @@
     - content_filter → :request-failed-content-filter"
   [response]
   (let [choices (get-in response [:response :body :choices])
-        match   (some #(let [reason (:finish_reason %)]
-                         (when (#{"length" "content_filter"} reason)
-                           reason))
-                      choices)]
+        match (some #(let [reason (:finish_reason %)]
+                       (when (#{"length" "content_filter"} reason)
+                         reason))
+                    choices)]
     (case match
-      "length"         (change-response-to-unsuccessful response
-                                                        constants/request-failed-limit-keyword
-                                                        constants/request-failed-limit-message)
+      "length" (change-response-to-unsuccessful response
+                                                constants/request-failed-limit-keyword
+                                                constants/request-failed-limit-message)
       "content_filter" (change-response-to-unsuccessful response
                                                         constants/request-failed-content-filter-keyword
                                                         constants/request-failed-content-filter-message)
@@ -367,7 +368,6 @@
   (mapv (comp :content :message) (get-in response [:response :body :choices])))
 
 
-;; todo: tests
 (defn- complete-response
   "Handles the response `response` from an OpenAI API chat request, based on configurations in the request `request`,
   and returns the response as a map.
@@ -541,7 +541,8 @@
                    response)
         handler-fn (get-in request [:response-config :handler-fn])]
     (if (:stream response)
-      (let [reader (get-in response [:response :body])]
+      (let [reader (get-in response [:response :body])
+            response (update-in response [:response] dissoc :body)]
         (if-not (:success response)
           (let [handler-response (-> response
                                      (assoc :stream true)
@@ -553,7 +554,7 @@
                                     (assoc :paused false))]
             (handler-fn handler-response)
             caller-response)
-          (sse-stream/read-sse-stream reader (update-in response [:response] dissoc :body) handler-fn)))
+          (sse-stream/read-sse-stream reader response handler-fn)))
       (let [response (cond-> response
                              (contains? (:response response) :body) (assoc-in [:response :body] (json/parse-string (get-in response [:response :body]) keyword))
                              true (check-response-errors))]
@@ -653,7 +654,6 @@
   [prepared-request api-key messages user-message]
   (let [messages (or messages [])
         completion (complete prepared-request api-key messages user-message)]
-    (println "COMPLETION: " completion)
     (if-not (:success completion)
       completion
       (if (:stream completion)
