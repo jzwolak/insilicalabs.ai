@@ -208,9 +208,10 @@
   "Performs an OpenAI API chat request, based on the configuration in `prepared-request` and returns the response as a
   map.
 
-  A prepared request is a map of four configurations, represented by maps, consisting of:  authentication, HTTP,
-  request, and response configurations.  This function requires the authentication and request configurations; the
-  others are ignored.
+  A prepared request for `prepared-request` is a map of four configurations, represented by maps, consisting of:
+  authentication, HTTP, request, and response configurations.  This function requires the authentication and request
+  configurations; the others are ignored.  See functions 'create-prepared-request' and
+  'create-prepared-request-from-config' to help more easily create a prepared request.
 
   The authentication configuration is required.  It must include the API key specified with `:api-key`.  It may include
   the organization and project if the user belongs to multiple projects or if the API key is a legacy key; otherwise,
@@ -632,6 +633,59 @@
 ;; todo: docs
 ;; todo: tests
 (defn ^:impure complete
+  "Performs an OpenAI API chat request based on the configurations in `prepared-response`, the API key in `api-key`, and
+  the messages in `messages-or-user-message`.  Returns a response as a map.
+
+  A prepared request for `prepared-request` is a map of four configurations, represented by maps, consisting of:
+  authentication, HTTP, request, and response configurations.  This function requires the authentication and request
+  configurations; the others are optional.  See functions 'create-prepared-request' and
+  'create-prepared-request-from-config' to help more easily create a prepared request.
+
+  The authentication configuration is optional.  It may include the organization and project if the user belongs to
+  multiple projects or if the API key is a legacy key; otherwise, the authentication configuration can be omitted or
+  left as an empty map.  The API key must not be passed through this configuration and, if so, it is ignored; the API
+  key should be provided in the argument `api-key`.  The authentication configuration is a map that consists of the
+  keys:
+    - :api-proj → the project, as a string; optional, but required if ':api-org is set'
+    - :api-org  → the organization, as a string; optional, but required if ':api-proj' is set
+
+  The HTTP configuration is optional and specifies HTTP parameters.  The HTTP configuration can be omitted or set to an
+  empty map if no HTTP configuration changes are desired.  The HTTP configuration is a map that consists of the keys:
+    - :socket-timeout     → sets the time after which, when no data is received between the last received data and
+                            current, that a timeout is declared; must be a number; optional
+    - :connection-timeout → sets the time after which, when no answer is received from the remote machine, that a
+                            timeout is declared; must be a number; optional
+
+  The request configuration is required and must specify at least the model to be used.  The request configuration
+  specifies the parameters of API request.  The request configuration may consist of any key-value pair as defined in
+  the appropriate API to which the request will be submitted, with the JSON property in the API converted to a Clojure
+  keyword.  The 'stream' property to enable streaming cannot be set here and, if so, it is removed; set the 'stream'
+  property in the response configuration.  The 'messages' property should not be set and, if so, it is removed; the
+  messages should be provided in the `messages`, `user-message`, or `messages-or-user-message` arguments depending on
+  the form of the function invoked.  The request configuration is a map that consists of the keys:
+    - :model    → the model to use, as a string; required
+
+  The response configuration is optional.  The response configuration specifies the handling of the response.  If no
+  response configuration is given, then the response will be a non-streaming response returned to the caller.
+    - :handler-fn → the handler function to receive the response; the caller also receives a more succinct response;
+                    optional but required if 'stream' is 'true'; defaults to no handler function
+    - :stream     → 'true' to enable streaming and absent or 'false' to disable streaming; defaults to 'false'
+
+  Messages for the chat completion request may be provided in one of the two ways by using the different forms of this
+  function.  See the function `create-messages` to help more easily create messages.
+
+  In the form '([prepared-request api-key messages-or-user-message])': `messages-or-user-message` defines the message
+  context in a single argument.  If the argument is a string, then the argument is interpreted as a user message and
+  results in '[{:role \"user\" :content <messages-or-user-message>}]'. Otherwise, the argument should be a vector of one
+  or more maps describing messages such as:
+    [{:role \"system\"    :content system-message}
+     {:role \"user\"      :content \"Can you recommend fun places to travel for hiking?\"}
+     {:role \"assistant\" :content \"Here are some hiking destinations I recommend...\"}
+     {:role \"user\"      :content <messages-or-user-message>}]
+
+  In the form '([prepared-request api-key messages user-message])': `messages` is vector of zero or more message maps
+  and `user-message` is a string user message to add to the `messages` vector.
+  "
   ([prepared-request api-key messages-or-user-message]
    (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
          prepared-request (-> prepared-request
@@ -641,7 +695,8 @@
          response (complete-request prepared-request)]
      (complete-response (assoc response :stream stream) prepared-request)))
   ([prepared-request api-key messages user-message]
-   (complete prepared-request api-key (conj messages {:role "user" :content user-message}))))
+   (let [messages (or messages [])]
+     (complete prepared-request api-key (conj messages {:role "user" :content user-message})))))
 
 
 ;; - same as complete, but adds 'user-message' and the response from the AI assistant to ':messages' and returns the response map with ':messages' key
