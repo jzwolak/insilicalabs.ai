@@ -408,7 +408,7 @@
   header properties are converted to kebab-style keywords.
 
   If this is a non-streaming request, then the HTTP response body at '[:response :body]' is parsed to JSON where
-  properties are converted to keywords.
+  properties are converted to keywords.  For a streaming request, the '[:response :body]' is removed.
 
   For a streaming request, the stream is read until the end of the stream or an error occurs.
 
@@ -425,6 +425,9 @@
       - 'function_call' → paused to make a legacy tool/function call; non-terminal condition, streaming only
       - nil             → a chunk of data was provided from the model; non-terminal condition, streaming only
 
+  To more easily retrieve the message of the content, see functions 'get-response-as-string' and
+  'get-response-as-string-vector'.  These functions handle both streaming and non-streaming responses.
+
   NON-STREAMING successful response returned to the HANDLER FUNCTION or the CALLER if no handler function is defined is
   a map:
     - :success  → 'true' for a successful response
@@ -434,7 +437,7 @@
                   content, if any, is at '[:response :body :choices n :message :content]'; 'n' refers to the index of
                   the ':choice' which could be 1 or more; a token could be a punctuation mark or part of a word or more
 
-  NON-STREAMING successful response returned to the CALLER if no handler function is defined is a map:
+  NON-STREAMING successful response returned to the CALLER if a handler function is defined is a map:
     - :success  → 'true' for a successful response
     - :stream   → 'false' for a non-streamed response
     - :messages → the list of messages from the response `response`
@@ -472,7 +475,7 @@
       - 'length'         → the token limit was reached
       - 'content_filter' → the response was blocked by the content filter
       - unrecognized     → e.g., not 'length', 'content_filter', 'stop', 'tool_calls' (streaming only), or
-        'function_call'  (streaming only)
+                           'function_call'  (streaming only)
 
   NON-STREAMING unsuccessful response returned to the HANDLER FUNCTION, if one is defined, and the CALLER is a map:
     - :success    → 'false' to indicate an unsuccessful request
@@ -571,66 +574,6 @@
           response)))))
 
 
-;; - Does one chat completion (does not store and reference previous completions).  To store and reference previous
-;; completions, use 'chat'.
-;;
-;; - Consider using 'create-prepared-request' to create a prepared request.
-;;
-;; - prepared-request:
-;;   - :auth-config
-;;     - :api-key is overwritten if set
-;;   - :request-config
-;;     - :url
-;;     - :model
-;;     - supports request API from OpenAI, but can't set streaming here, do in :response-config.  Per OpenAI API, 'n'
-;;       is ignored for streaming.
-;;   - :response-config
-;;     - set :handler-fn for response to go to a handler function; one is required for streaming
-;;     - set :stream=true for streaming else :stream=false or not set for non-streaming
-;;
-;; - To stream:
-;;   - in :response-config, set handler fn in :handler-fn.  that receives all info, including errs.
-;;
-;; - Returns on success a map such that:
-;;   - :success = true
-;;   - :response = original HTTP response that includes keywords such as:
-;;     - :status
-;;     - :reason-phrase
-;;     - :headers -- headers converted from string property names to kebab case keywords
-;;     - :protocol-version
-;;     - :body -- json parsed with string property names converted to keywords.  NOT explicitly kebab case to preserve OpenAI API.
-;;   - :stream = true/false if streaming or not
-;;   - :stream-end = true/false if stream has ended or not; only set if streaming
-;;   - :chunk-counter = int count of chunk; only set if streaming
-;;
-;; - To get content, use 'get-response-as-string' or 'get-response-as-string-vector'
-;;   - For non-streaming, the first content at key sequence [:response :choices 0 :message :content].  Note that
-;;     :choices is vector, could be more than 1 if n > 1 in request.
-;;   - For streaming, content at key sequence [:response :choices 0 :delta :content].  There's only 1 choice since streaming
-;;     does not respect n in request.
-;;
-;; - Returns on failure a map such that:
-;;   - :success = false
-;;   - :reason = string reason for the failure
-;;   - :exception = the exception obj; only set if an exception occurred
-;;   - :response = original HTTP response, if set, that includes keywords such as:
-;;     - :status
-;;     - :reason-phrase
-;;     - :headers -- headers converted from string property names to kebab case keywords
-;;     - :protocol-version
-;;     - :body -- json parsed with string property names converted to keywords.  NOT explicitly kebab case to preserve OpenAI API.
-;;   - :stream = true/false if streaming or not
-;;   - :stream-end = true/false if stream has ended or not; only set if streaming
-;;   - :chunk-num = int count of chunk; only set if streaming
-;;
-;;
-;; - Does not throw exceptions.  All exceptions are captured and returned as maps with :success = false.
-;;
-;;   - for streaming
-;;     - possible that the 'delta' didn't have content, such as first and last chunks or finish_reason=tool_calls,
-;;       function_call, stop
-;;     - will not have multiple choices, so n = 0 always
-;; todo: docs
 ;; todo: tests
 (defn ^:impure complete
   "Performs an OpenAI API chat request based on the configurations in `prepared-response`, the API key in `api-key`, and
@@ -685,7 +628,154 @@
 
   In the form '([prepared-request api-key messages user-message])': `messages` is vector of zero or more message maps
   and `user-message` is a string user message to add to the `messages` vector.
-  "
+
+  The following describes how the response is handled.  All responses are maps.
+
+  Some response maps have key `:response` which contains the HTTP response with some modifications.  The HTTP response
+  in ':response' takes the form (selected fields shown):
+    :cached <nil for not cached>
+    :protocol-version <protocol version>
+    :cookies <cookies>
+    :reason-phrase <string reason>
+    :headers <string headers>
+    :status <string status code>
+    :body <stringified JSON> if non-streaming else a Reader if streaming
+
+  For the HTTP response in ':response':
+    - The HTTP headers at '[:response :headers]' are converted to kebab-style keywords
+    - For a non-streaming request, then the HTTP response body at '[:response :body]' is parsed to JSON where properties
+      are converted to keywords
+    - For a streaming request, the '[:response :body]' is removed
+
+  For a streaming request, the stream is read until the end of the stream or an error occurs.
+
+  For both streaming and non-streaming requests:  a response is returned first to the handler function, if one is
+  defined (required for streaming, optional for non-streaming), then to the caller.
+
+  Successful responses are returned if all the following occur:
+    - no HTTP error occurred
+    - no stream reader exception occurred
+    - the content could be parsed into a valid JSON response
+    - the finish_reason was:
+      - 'stop'          → the model successfully generated a response; terminal condition
+      - 'tools_calls'   → paused to make a tool/function call; non-terminal condition, streaming only
+      - 'function_call' → paused to make a legacy tool/function call; non-terminal condition, streaming only
+      - nil             → a chunk of data was provided from the model; non-terminal condition, streaming only
+
+  To more easily retrieve the message of the content, see functions 'get-response-as-string' and
+  'get-response-as-string-vector'.  These functions handle both streaming and non-streaming responses.
+
+  NON-STREAMING successful response returned to the HANDLER FUNCTION or the CALLER if no handler function is defined is
+  a map:
+    - :success  → 'true' for a successful response
+    - :stream   → 'false' for a non-streamed response
+    - :response → the `response` argument which should be the original HTTP response to the request
+        - :body → response parsed as JSON using keywords for properties, which could contain 0 or more tokens; the
+                  content, if any, is at '[:response :body :choices n :message :content]'; 'n' refers to the index of
+                  the ':choice' which could be 1 or more; a token could be a punctuation mark or part of a word or more
+
+  NON-STREAMING successful response returned to the CALLER if a handler function is defined is a map:
+    - :success  → 'true' for a successful response
+    - :stream   → 'false' for a non-streamed response
+    - :messages → the list of messages from the response `response`
+
+  STREAMING successful response returned to the HANDLER FUNCTION is a map:
+    - :success     → 'true' for a successful response
+    - :stream      → 'true' for a streamed response
+    - :response    → the `response` argument which should be the original HTTP response to the request
+        - :data    → chunk data parsed to JSON converting properties to keywords, which could contain 0 or more tokens;
+                     the content, if any, is at '[:response :data :choices 0 :delta :content]'; '0' refers to the index
+                     of the ':choice' which is always 0 for a streamed response; a token could be a punctuation mark or
+                     part of a word or more
+    - :chunk-num   → the number of chunks received thus far, starting at zero
+    - :stream-end  → 'true' if a terminal condition and 'false' otherwise
+    - :paused      → 'true' if paused and 'false' otherwise
+    - :paused-code → the code describing the pause, set only if ':paused' is 'true, consisting of:
+      - ':tool-call' → a tool/function call is being made
+      - ':function-call' →  a legacy tool/function call is being made; only set if ':paused' is 'true'
+    - :reason      → a string reason for why the model paused; only set if ':paused' is 'true'
+    - :message     → the full message from the combined chunks; only set on a successful terminal condition
+
+  STREAMING successful response returned to the CALLER is a map:
+    - :success     → 'true' for a successful response
+    - :stream      → 'true' for a streamed response
+    - :stream-end  → 'true' to indicate a terminal condition
+    - :paused      → 'false' to indicate that the model is not paused
+    - :message     → the full message from the combined chunks
+
+  Unsuccessful responses are returned, both to the handler function (if defined) and the caller, if any of the following
+  occur.  All of these conditions are terminal.
+    - an HTTP error occurred
+    - a stream exception occurred
+    - the content could not be parsed into a valid JSON response
+    - the finish_reason was:
+      - 'length'         → the token limit was reached
+      - 'content_filter' → the response was blocked by the content filter
+      - unrecognized     → e.g., not 'length', 'content_filter', 'stop', 'tool_calls' (streaming only), or
+                           'function_call'  (streaming only)
+
+  NON-STREAMING unsuccessful response returned to the HANDLER FUNCTION, if one is defined, and the CALLER is a map:
+    - :success    → 'false' to indicate an unsuccessful request
+    - :stream     → 'false' to indicate a non-streaming request
+    - :error-code → a keyword that indicates the reason for the failure (see below for error codes)
+    - :reason     → a string that explains the reason for the failure
+    - :response   → the response `response`
+    - :exception  → holds the exception object if an exception occurred; only set if an exception occurred
+
+  STREAMING unsuccessful responses returned to the HANDLER FUNCTION are maps with the form:
+    - :success    → 'false' for an unsuccessful response
+    - :error-code → an error code indicating why the request failed; see listing of error codes below
+    - :reason     → string reason why the response failed
+    - :exception  → the exception that caused the failure; only set if an exception occurred and caused the failure
+    - :stream     → 'true' for a streamed response
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+    - :response   → the `response` argument which should be the original HTTP response to the request
+
+  STREAMING unsuccessful responses returned to the CALLER is a map with the form:
+    - :success    → 'true' for a successful response
+    - :error-code → an error code indicating why the request failed; see listing of error codes below
+    - :reason     → a string reason for why the request failed
+    - :exception  → the exception that caused the failure; only set if an exception occurred and caused the failure
+    - :stream     → 'true' for a streamed response
+    - :stream-end → 'true' to indicate a terminal condition
+    - :paused     → 'false' to indicate that the model is not paused
+
+  In the case of a failure, the error code in the key ':error-code' provides a programmatic way to determine the cause
+  of the failure.  Error codes consist of:
+    - :http-config-nil                 → The HTTP configuration (and thus the entire configuration) was `nil`
+    - :http-config-not-map             → The HTTP configuration (and thus the entire configuration) was not a map
+    - :http-config-empty               → The HTTP configuration (and thus the entire configuration) was an empty map
+    - :http-config-unknown-key         → The HTTP configuration contained an unknown key
+    - :http-config-method-missing      → The HTTP configuration did not specify the `:method` key to define the HTTP
+                                         method, e.g. `GET` or `POST`
+    - :http-config-method-invalid      → The HTTP configuration `:method` key was not one of the valid values, either
+                                         `:get` or `:post`
+    - :http-config-url-missing         → The HTTP configuration did not specify the `:url` key to define the URL to
+                                         which to connect
+    - :http-config-url-not-string      → The HTTP configuration `:url` key was not a string
+    - :http-request-failed             → The HTTP request failed.  See the `:response` key for reason phrase
+                                         `:reason-phrase` and status code `:status` in the returned map.  The failure
+                                         was not due to an exception.
+    - :request-config-missing-api-key  → The request configuration does not contain the key ':api-key' in map
+                                         ':auth-config'.
+    - :request-config-api-proj-org     → The request configuration contains one of key ':api-proj' or key ':api-org' in
+                                         map ':auth-config' but not the other.
+    - :request-config-model-missing    → The request configuration does not contain key ':model in map
+                                         ':request-config'.
+    - :request-config-messages-missing → The request configuration does not contain key ':messages' in map
+                                         ':request-config'.
+    - :http-request-failed-ioexception → The HTTP request failed due to an `IOException`.  See `:exception` for the
+                                         exception in the returned map.
+    - :http-request-failed-exception   → The HTTP request failed due an `Exception`.  See `:exception` for the exception
+                                         in the returned map.
+    - :parse-failed                    → failed parsing the response as JSON
+    - :request-failed-limit            → the response stopped due to the token limit being reached
+    - :request-failed-content-filter   → the response was blocked by the content filter for potentially sensitive or
+                                         unsafe content
+    - :stream-read-failed              → an error occurred while reading the stream
+    - :stream-event-error              → an error event was received from the streamed response; streaming only
+    - :stream-event-unknown            → an unknown event was received from the streamed response; streaming only"
   ([prepared-request api-key messages-or-user-message]
    (let [messages (create-messages-from-messages-or-user-message messages-or-user-message)
          prepared-request (-> prepared-request
@@ -699,13 +789,19 @@
      (complete prepared-request api-key (conj messages {:role "user" :content user-message})))))
 
 
-;; - same as complete, but adds 'user-message' and the response from the AI assistant to ':messages' and returns the response map with ':messages' key
-;;   - and gets the 0th choice for the chat completion
-;; - the user message is not saved in 'messages' if the request fails; and of course, there's no assistant message saved
-;; - successful message with finish_reason=stop for streaming returns data for the chat messages.  all other cases return nil.
-;; todo: docs
 ;; todo: tests
 (defn ^:impure chat
+  "Performs an OpenAI API chat request based on the configurations in `prepared-response`, the API key in `api-key`, and
+  the messages in `messages-or-user-message`.  If successful, then adds the user message `user-message` and the
+  response message to the messages vector `messages`.  Returns a response as a map.
+
+  See the function form '(complete [prepared-request api-key messages-or-user-message])' for documentation; this
+  functions input, behavior, and output is identical to that function form with the addition noted below.
+
+  If successful (e.g., ':success' is 'true'), then both the user message `user-message` and the response message are
+  added to the messages vector `messages`.  This vector is returned in the response map at the key ':messages'.  If the
+  request failed for any reason, including if at least one choice failed (for a non-streaming response), then the entire
+  request is indicated to have failed (e.g., ':success' is 'false')."
   [prepared-request api-key messages user-message]
   (let [messages (or messages [])
         completion (complete prepared-request api-key messages user-message)]
@@ -718,47 +814,5 @@
               (dissoc :message)
               (assoc :messages messages)))
         (if (contains? (:response-config prepared-request) :handler-fn)
-          (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-in completion [:messages 0])}))
+          (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-in completion [:messages 0])})) ;; todo: check this is correct
           (assoc completion :messages (conj messages {:role "user" :content user-message} {:role "assistant" :content (get-response-as-string completion)})))))))
-
-
-
-;; todo: keep for keeping the function below
-(defn- create-context-old [context-or-text]
-  (cond
-    (nil? context-or-text) []
-    (string? context-or-text) [{:role "user" :content context-or-text}]
-    :else context-or-text))
-
-;; todo: keep for documentation reference
-(defn complete-old
-  "Perform a simple chat completion given context-or-text. If context-or-text is a string then it will be treated as
-  a single message from the user. Otherwise, it will be used as the data for OpenAI's :messages. For example,
-  context-or-text can have a value like [{:role \"user\" :content \"Recommend some ice cream flavors.\"}] or
-  [{:role \"user\" :content \"Recommend some ice cream flavors.\"}
-   {:role \"assistant\" :content \"Here are some ice cream flavors I recommend ...\"}
-   {:role \"user\" :content \"Great! Thank you. Now can you ...\"}]
-
-  config must be a map and contain :api-key with a string of your OpenAI api key.
-
-  The three arg form takes the context and a new user message to add to the context.
-
-  config - a map which must contain :api-key
-  context - a vector of messages of the form [{:role \"user\" :content \"message...\"}]
-  context-or-text a vector of messages or a string message from user
-  user-message - a string with a new user message to add to the context"
-  ([config context user-message]
-   (complete-old config (conj context {:role "user" :content user-message})))
-  ([config context-or-text]
-   {:pre [(:api-key config)]}
-   (let [context (create-context-old context-or-text)])))
-
-
-;; todo: keep for documentation reference
-(defn chat-old
-  "Hold a conversation by adding new user messages to the context and completing. This always returns the full context
-  with user's new-message and chat completion."
-  [config context new-message]
-  (let [context (or context [])
-        completion (complete-old config context new-message)]
-    (conj context {:role "user" :content new-message} {:role "assistant" :content completion})))

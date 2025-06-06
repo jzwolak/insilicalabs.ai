@@ -654,7 +654,10 @@
     (is (= expected-handler-response actual-handler-response))
     (if (some? expected-handler-reason-list)
       (is-every-substring actual-handler-reason expected-handler-reason-list)
-      (is (nil? actual-handler-reason)))))
+      (is (nil? actual-handler-reason)))
+    (if (some? expected-caller-reason-list)
+      (is-every-substring actual-caller-reason expected-caller-reason-list)
+      (is (nil? actual-caller-reason)))))
 
 
 (deftest complete-response-test
@@ -1096,3 +1099,34 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
                                      :chunk-num  2
                                      :message    "A chunk"}]
       (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response))))
+
+
+;; todo
+(defn perform-successful-complete-and-chat-test
+  [])
+
+
+;; todo
+(defn split-perform-successful-complete-and-chat-test
+  [])
+
+
+;; todo
+(defn perform-unsuccessful-complete-and-chat-test
+  [])
+
+;; todo
+;; function-under-test ...
+(defn split-perform-unsuccessful-complete-and-chat-test
+  [])
+
+
+;; successful:
+;; prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response
+(deftest complete-and-chat-test
+  (testing "todo")
+
+
+  ;; todo
+  )
+
