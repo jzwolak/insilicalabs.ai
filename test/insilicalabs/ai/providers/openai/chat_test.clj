@@ -13,6 +13,11 @@
   (:import (java.io BufferedReader IOException Reader StringReader)))
 
 
+(def ^:const COMPLETE-MOUM :complete-moum)
+(def ^:const COMPLETE-M-UM :complete-m-um)
+(def ^:const CHAT :chat)
+
+
 (defn is-every-substring
   [string list]
   (is (every? #(str/includes? (str/lower-case string) (str/lower-case %)) list)
@@ -1103,28 +1108,82 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
 
 ;; todo
 (defn perform-successful-complete-and-chat-test
-  [])
 
+  ([prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response]
+   (let []
+    (perform-successful-complete-and-chat-test COMPLETE prepared-request api-key messages user-message use-handler-fn
+                                              expected-caller-response expected-handler-response)
+   (perform-successful-complete-and-chat-test CHAT prepared-request api-key messages user-message use-handler-fn
+                                              expected-caller-response expected-handler-response)))
 
-;; todo
-(defn split-perform-successful-complete-and-chat-test
-  [])
+  ([function-under-test prepared-request api-key messages user-message use-handler-fn expected-caller-response
+    expected-handler-response]
+   (let [actual-handler-response (atom nil)
+         handler-fn (fn [resp] (reset! actual-handler-response resp))
+
+         prepared-request (if use-handler-fn
+                            (assoc-in prepared-request [:response-config :handler-fn] handler-fn)
+                            prepared-request)
+
+         expected-caller-reason-list (:reason-list expected-caller-response)
+         expected-caller-response (-> expected-caller-response
+                                      (dissoc :reason-list))
+
+         expected-handler-reason-list (:reason-list expected-handler-response)
+         expected-handler-response (-> expected-handler-response
+                                       (dissoc :reason-list))
+
+         ;; do the function call
+         actual-caller-response (if (= function-under-test :complete)
+                                  (complete prepared-request api-key messages-or-user-message))
+
+         actual-caller-reason (:reason actual-caller-response)
+         actual-caller-response (dissoc actual-caller-response :reason)
+
+         actual-handler-reason (:reason @actual-handler-response)
+         actual-handler-response (-> @actual-handler-response
+                                     (dissoc :reason))]
+
+     (is (= expected-caller-response actual-caller-response))
+     (is (= expected-handler-response actual-handler-response))
+     (if (some? expected-handler-reason-list)
+       (is-every-substring actual-handler-reason expected-handler-reason-list)
+       (is (nil? actual-handler-reason)))
+     (if (some? expected-caller-reason-list)
+       (is-every-substring actual-caller-reason expected-caller-reason-list)
+       (is (nil? actual-caller-reason))))))
 
 
 ;; todo
 (defn perform-unsuccessful-complete-and-chat-test
-  [])
+  ([prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response]
+   (perform-unsuccessful-complete-and-chat-test COMPLETE prepared-request api-key messages user-message use-handler-fn
+                                                expected-caller-response expected-handler-response)
+   (perform-unsuccessful-complete-and-chat-test CHAT prepared-request api-key messages user-message use-handler-fn
+                                                expected-caller-response expected-handler-response))
 
-;; todo
-;; function-under-test ...
-(defn split-perform-unsuccessful-complete-and-chat-test
-  [])
+  ([function-under-test prepared-request api-key messages user-message use-handler-fn expected-caller-response
+    expected-handler-response]
+   ))
+
 
 
 ;; successful:
 ;; prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response
+;;
+;; tests both 'complete' and 'chat' functions using the same input test data since the only difference between the two
+;; functions is that 'chat' adds a ':messages' key with the user message and response message on success
 (deftest complete-and-chat-test
-  (testing "todo")
+  (testing "x"
+    (let [prepared-request {}
+          api-key "ABC123"
+          messages []
+          user-message "Hi"
+          use-handler-fn false
+          expected-caller-response {}
+          expected-handler-response {}]
+      (perform-successful-complete-and-chat-test prepared-request api-key messages user-message use-handler-fn
+                                                 expected-caller-response expected-handler-response)))
 
 
   ;; todo

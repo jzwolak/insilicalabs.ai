@@ -20,8 +20,8 @@
   "Creates and returns a prepared request, suitable for submitting as part of a request.  A prepared request captures
   those values and pre-processes those aspects of the request that typically don't change between subsequent requests.
 
-  A prepared request is a map of four configurations, represented by maps, consisting of:  authentication, HTTP,
-  request, and response configurations.
+  A prepared request is a map incorporating four configurations, represented by maps, consisting of:  authentication,
+  HTTP, request, and response configurations.
 
   The authentication configuration is optional.  It may include the organization and project if the user belongs to
   multiple projects or if the API key is a legacy key; otherwise, the authentication configuration can be omitted or
@@ -51,6 +51,32 @@
     - :handler-fn → the handler function to receive the response; optional but required if 'stream' is 'true'
     - :stream     → 'true' to enable streaming and absent or 'false' to disable streaming
 
+  The returned prepared request map takes the form as follows.  HTTP settings and other configurations that don't change
+  between requests are added into the ':prepared-request' map.  Others are kept separate and processed on a
+  per-request basis.
+    {
+      :prepared-request {
+                          :url                <default chat completions URL> (added by this function)
+                          :content-type       :json (added by this function)
+                          :accept             :json (added by this function)
+                          :as                 :reader (added by this function if a streaming request, else omitted)
+                          :socket-timeout     <socket timeout> (set by user, else omitted)
+                          :connection-timeout <connection timeout (set by user, else omitted)
+                        }
+      :auth-config      {
+                          :api-proj           <API project> (set by user, else omitted; required if :api-org set)
+                          :api-org            <API organization> (set by user, else omitted; required if :api-proj set)
+                        }
+      :request-config   {
+                          :model              <model to use> (set by user, required)
+                        }
+      :response config  {
+                          :handler-fn         <handler function> (set by user, optional for non-streaming, required for
+                                                                 streaming)
+                          :stream             <'true' for streaming, 'false' otherwise> (set by user)
+                        }
+    }
+
   Does not validate the inputs or the returned prepared request."
   ([request-config]
    (create-prepared-request {} {} request-config {}))
@@ -78,9 +104,9 @@
 
 
 (defn create-prepared-request-from-config
-  "Builds and returns a prepared request from a configuration.  A configuration is a map of the four configurations--
-  authentication, HTTP, request, and response--expressed as maps.  Only the request configuration is required; if not
-  needed, then the others may be omitted or set to empty maps.
+  "Builds and returns a prepared request from a configuration.  A configuration is a map incorporating four
+  configurations-- authentication, HTTP, request, and response--expressed as maps.  Only the request configuration is
+  required; if not needed, then the others may be omitted or set to empty maps.
 
   The config should be a map with keys:
     - :auth-config     → authentication configuration, optional
@@ -91,8 +117,7 @@
   See 'create-prepared-request' for a description of the keys in the configurations and an explanation of the returned
   prepared request.
 
-  Does not validate the inputs or the returned configuration.
-  "
+  Does not validate the inputs or the returned configuration."
   [config]
   (let [{:keys [auth-config http-config request-config response-config]
          :or   {auth-config {} http-config {} request-config {} response-config {}}}
@@ -111,8 +136,7 @@
   The `auth-config` must be a map with keys:
     - :api-key  → the API key, as a string; required
     - :api-org  → the API organization, as a string; optional
-    - :api-proj → the API project, as a string; optional
-  "
+    - :api-proj → the API project, as a string; optional"
   [auth-config]
   (cond-> {"Authorization" (str "Bearer " (:api-key auth-config))}
           (:api-org auth-config) (assoc "OpenAI-Organization" (:api-org auth-config))
@@ -208,28 +232,21 @@
   "Performs an OpenAI API chat request, based on the configuration in `prepared-request` and returns the response as a
   map.
 
-  A prepared request for `prepared-request` is a map of four configurations, represented by maps, consisting of:
-  authentication, HTTP, request, and response configurations.  This function requires the authentication and request
-  configurations; the others are ignored.  See functions 'create-prepared-request' and
-  'create-prepared-request-from-config' to help more easily create a prepared request.
+  A prepared request for `prepared-request` is a map incorporating four configurations, represented by maps, consisting
+  of: authentication, HTTP, request, and response configurations.  This function requires the authentication and request
+  configurations; the others are ignored.  See function 'create-prepared-request' for documentation on the prepared
+  request.  See functions 'create-prepared-request' and 'create-prepared-request-from-config' to help more easily create
+  a prepared request.
 
   The authentication configuration is required.  It must include the API key specified with `:api-key`.  It may include
   the organization and project if the user belongs to multiple projects or if the API key is a legacy key; otherwise,
-  the authentication configuration can be omitted or left as an empty map.  The authentication configuration is a map
-  that consists of the keys:
-    - :api-key  → the API key; required
-    - :api-proj → the project, as a string; optional, but required if ':api-org is set'
-    - :api-org  → the organization, as a string; optional, but required if ':api-proj' is set
+  the authentication configuration can be omitted or left as an empty map.
 
   The request configuration is required and must specify at least the model to be used and the messages that are part
   of the requested completion.  The request configuration specifies the parameters of API request.  The request
   configuration may consist of any key-value pair as defined in the appropriate API to which the request will be
   submitted, with the JSON property in the API converted to a Clojure keyword.  The 'stream' property to enable
-  streaming cannot be set here and, if so, it is removed; set the 'stream' property in the response configuration.  The
-  'messages' property should not be set; if so, it is removed.  The request configuration is a map that consists of the
-  keys:
-    - :model    → the model to use, as a string; required
-    - :messages → a vector of one or more messages describing the conversation; required
+  streaming cannot be set here and, if so, it is removed; set the 'stream' property in the response configuration.
 
   On success, the returned map contains key ':success' set to 'true' and ':response' set the HTTP response.
 
@@ -579,40 +596,27 @@
   "Performs an OpenAI API chat request based on the configurations in `prepared-response`, the API key in `api-key`, and
   the messages in `messages-or-user-message`.  Returns a response as a map.
 
-  A prepared request for `prepared-request` is a map of four configurations, represented by maps, consisting of:
-  authentication, HTTP, request, and response configurations.  This function requires the authentication and request
-  configurations; the others are optional.  See functions 'create-prepared-request' and
-  'create-prepared-request-from-config' to help more easily create a prepared request.
+  A prepared request for `prepared-request` is a map incorporating four configurations, represented by maps, consisting
+  of: authentication, HTTP, request, and response configurations.  This function requires the authentication and request
+  configurations; the others are optional.  See function 'create-prepared-request' for documentation on the prepared
+  request.  See functions 'create-prepared-request' and 'create-prepared-request-from-config' to help more easily create
+  a prepared request.
 
   The authentication configuration is optional.  It may include the organization and project if the user belongs to
   multiple projects or if the API key is a legacy key; otherwise, the authentication configuration can be omitted or
   left as an empty map.  The API key must not be passed through this configuration and, if so, it is ignored; the API
-  key should be provided in the argument `api-key`.  The authentication configuration is a map that consists of the
-  keys:
-    - :api-proj → the project, as a string; optional, but required if ':api-org is set'
-    - :api-org  → the organization, as a string; optional, but required if ':api-proj' is set
+  key should be provided in the argument `api-key`.
 
-  The HTTP configuration is optional and specifies HTTP parameters.  The HTTP configuration can be omitted or set to an
-  empty map if no HTTP configuration changes are desired.  The HTTP configuration is a map that consists of the keys:
-    - :socket-timeout     → sets the time after which, when no data is received between the last received data and
-                            current, that a timeout is declared; must be a number; optional
-    - :connection-timeout → sets the time after which, when no answer is received from the remote machine, that a
-                            timeout is declared; must be a number; optional
+  The HTTP configuration is optional and specifies HTTP parameters.
 
   The request configuration is required and must specify at least the model to be used.  The request configuration
   specifies the parameters of API request.  The request configuration may consist of any key-value pair as defined in
   the appropriate API to which the request will be submitted, with the JSON property in the API converted to a Clojure
   keyword.  The 'stream' property to enable streaming cannot be set here and, if so, it is removed; set the 'stream'
-  property in the response configuration.  The 'messages' property should not be set and, if so, it is removed; the
-  messages should be provided in the `messages`, `user-message`, or `messages-or-user-message` arguments depending on
-  the form of the function invoked.  The request configuration is a map that consists of the keys:
-    - :model    → the model to use, as a string; required
+  property in the response configuration.
 
   The response configuration is optional.  The response configuration specifies the handling of the response.  If no
   response configuration is given, then the response will be a non-streaming response returned to the caller.
-    - :handler-fn → the handler function to receive the response; the caller also receives a more succinct response;
-                    optional but required if 'stream' is 'true'; defaults to no handler function
-    - :stream     → 'true' to enable streaming and absent or 'false' to disable streaming; defaults to 'false'
 
   Messages for the chat completion request may be provided in one of the two ways by using the different forms of this
   function.  See the function `create-messages` to help more easily create messages.
