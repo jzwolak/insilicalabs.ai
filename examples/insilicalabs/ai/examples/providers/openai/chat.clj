@@ -72,7 +72,7 @@
       (print-error response))))
 
 
-(defn complete-nonstream-no-handler-fn
+(defn complete-non-stream-no-handler-fn
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})
         messages (chat/create-messages "You are a helpful assistant." nil)]
@@ -103,7 +103,7 @@
                   (recur)))))))
 
 
-(defn complete-nonstream-with-handler-fn
+(defn complete-non-stream-with-handler-fn
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default} {:handler-fn non-streaming-handler-fn})
         messages (chat/create-messages "You are a helpful assistant." nil)]
@@ -154,7 +154,7 @@
                   (recur)))))))
 
 
-(defn chat-nonstream-no-handler-fn
+(defn chat-non-stream-no-handler-fn
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})]
     (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
@@ -187,7 +187,7 @@
                       (recur messages)))))))))
 
 
-(defn chat-nonstream-with-handler-fn
+(defn chat-non-stream-with-handler-fn
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default} {:handler-fn non-streaming-handler-fn})]
     (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
@@ -297,13 +297,13 @@
       (case choice
         ;;
         ;; complete
-        "1" (do (complete-nonstream-no-handler-fn api-key-path) (recur))
-        "2" (do (complete-nonstream-with-handler-fn api-key-path) (recur))
+        "1" (do (complete-non-stream-no-handler-fn api-key-path) (recur))
+        "2" (do (complete-non-stream-with-handler-fn api-key-path) (recur))
         "3" (do (complete-stream api-key-path) (recur))
         ;;
         ;; chat
-        "4" (do (chat-nonstream-no-handler-fn api-key-path) (recur))
-        "5" (do (chat-nonstream-with-handler-fn api-key-path) (recur))
+        "4" (do (chat-non-stream-no-handler-fn api-key-path) (recur))
+        "5" (do (chat-non-stream-with-handler-fn api-key-path) (recur))
         "6" (do (chat-stream api-key-path) (recur))
         ;;
         "7" (do (demo-config api-key-path) (recur))

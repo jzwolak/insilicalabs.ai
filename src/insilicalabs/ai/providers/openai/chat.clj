@@ -793,7 +793,6 @@
      (complete prepared-request api-key (conj messages {:role "user" :content user-message})))))
 
 
-;; todo: tests
 (defn ^:impure chat
   "Performs an OpenAI API chat request based on the configurations in `prepared-response`, the API key in `api-key`, and
   the messages in `messages-or-user-message`.  If successful, then adds the user message `user-message` and the

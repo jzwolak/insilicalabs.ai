@@ -607,6 +607,7 @@
         ;; do the function call
         complete-response #'chat/complete-response
         actual-caller-response (complete-response response request)
+
         actual-caller-response-had-exception (contains? actual-caller-response :exception)
         actual-caller-response (dissoc actual-caller-response :exception)
 
@@ -1106,7 +1107,7 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
       (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response))))
 
 
-;; todo - building tests
+;; used by 'complete' and 'chat' tests
 (defn prep-complete-and-chat-test
   [params]
   (let [actual-handler-response (atom nil)
@@ -1117,46 +1118,62 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
                            (:prepared-request params))
 
         expected-caller-reason-list (:reason-list (:expected-caller-response params))
+        expected-caller-response-had-exception (contains? (:expected-caller-response params) :exception)
         expected-caller-response (-> (:expected-caller-response params)
+                                     (dissoc :exception)
                                      (dissoc :reason-list))
 
         expected-handler-reason-list (:reason-list (:expected-handler-response params))
+        expected-handler-response-had-exception (contains? (:expected-handler-response params) :exception)
         expected-handler-response (-> (:expected-handler-response params)
+                                      (dissoc :exception)
                                       (dissoc :reason-list))]
     (-> params
-        (assoc :actual-handler-response actual-handler-response)
         (assoc :handler-fn handler-fn)
         (assoc :prepared-request prepared-request)
-        (assoc :expected-caller-reason-list expected-caller-reason-list)
         (assoc :expected-caller-response expected-caller-response)
+        (assoc :expected-caller-response-had-exception expected-caller-response-had-exception)
+        (assoc :expected-caller-reason-list expected-caller-reason-list)
+        (assoc :expected-handler-response-had-exception expected-handler-response-had-exception)
         (assoc :expected-handler-reason-list expected-handler-reason-list)
-        (assoc :expected-handler-response expected-handler-response))))
+        (assoc :expected-handler-response expected-handler-response)
+        (assoc :actual-handler-response actual-handler-response))))
 
 
-;; todo - building tests
+;; used by 'complete' and 'chat' tests
 (defn check-complete-and-chat-test
   [{:keys [expected-caller-response
+           expected-caller-response-had-exception
+           expected-caller-reason-list
            actual-handler-response
            expected-handler-response
-           expected-handler-reason-list
-           expected-caller-reason-list]} actual-caller-response]
-  (let [actual-caller-reason (:reason actual-caller-response)
-        actual-caller-response (dissoc actual-caller-response :reason)
+           expected-handler-response-had-exception
+           expected-handler-reason-list]} actual-caller-response]
+  (let [actual-caller-response-had-exception (contains? actual-caller-response :exception)
+        actual-caller-reason (:reason actual-caller-response)
+        actual-caller-response (-> actual-caller-response
+                                   (dissoc :exception)
+                                   (dissoc :reason))
 
+        actual-handler-response-had-exception (contains? @actual-handler-response :exception)
         actual-handler-reason (:reason @actual-handler-response)
         actual-handler-response (-> @actual-handler-response
+                                    (dissoc :exception)
                                     (dissoc :reason))]
     (is (= expected-caller-response actual-caller-response))
-    (is (= expected-handler-response actual-handler-response))
-    (if (some? expected-handler-reason-list)
-      (is-every-substring actual-handler-reason expected-handler-reason-list)
-      (is (nil? actual-handler-reason)))
+    (is (= expected-caller-response-had-exception actual-caller-response-had-exception))
     (if (some? expected-caller-reason-list)
       (is-every-substring actual-caller-reason expected-caller-reason-list)
-      (is (nil? actual-caller-reason)))))
+      (is (nil? actual-caller-reason)))
+
+    (is (= expected-handler-response actual-handler-response))
+    (is (= expected-handler-response-had-exception actual-handler-response-had-exception))
+    (if (some? expected-handler-reason-list)
+      (is-every-substring actual-handler-reason expected-handler-reason-list)
+      (is (nil? actual-handler-reason)))))
 
 
-(defn perform-complete-test
+(defn perform-complete-messages-or-user-message-arity-test
   [params]
   (let [updated-params (prep-complete-and-chat-test params)]
     (with-redefs [http/post (fn [_] (:http-response params))]
@@ -1164,19 +1181,12 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
         (check-complete-and-chat-test updated-params actual-caller-response)))))
 
 
-;; since these have the same responses except with 'chat' returning a ':messages' key, this function performs the tests
-;; for:
-;;   - (complete [prepared-request api-key messages user-message])
-;;   - (chat [prepared-request api-key messages user-message]
-(defn perform-complete-and-chat-test
-  [params])
-
-
 ;; this function tests the (complete [prepared-request api-key messages-or-user-message]) arity of the function
 (deftest complete-messages-or-user-message-arity-test
+  ;;
+  ;; successful
   (testing "success: string input, no handler"
-    (let [params {:successful                true
-                  :use-handler               false
+    (let [params {:use-handler               false
                   :http-response             {:success  true
                                               :response {:body "{
   \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
@@ -1207,10 +1217,9 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
                                                                            :finish_reason "stop"}]}}
                                               :stream   false}
                   :expected-handler-response nil}]
-      (perform-complete-test params)))
+      (perform-complete-messages-or-user-message-arity-test params)))
   (testing "success: string input, w/ handler"
-    (let [params {:successful                true
-                  :use-handler               true
+    (let [params {:use-handler               true
                   :http-response             {:success  true
                                               :response {:body "{
   \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
@@ -1243,10 +1252,9 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
                                                                                            :content "There once was a bright firefly..."}
                                                                            :finish_reason "stop"}]}}
                                               :stream   false}}]
-      (perform-complete-test params)))
+      (perform-complete-messages-or-user-message-arity-test params)))
   (testing "success: vector input, no handler"
-    (let [params {:successful                true
-                  :use-handler               false
+    (let [params {:use-handler               false
                   :http-response             {:success  true
                                               :response {:body "{
   \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
@@ -1280,10 +1288,9 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
                                                                            :finish_reason "stop"}]}}
                                               :stream   false}
                   :expected-handler-response nil}]
-      (perform-complete-test params)))
+      (perform-complete-messages-or-user-message-arity-test params)))
   (testing "success: vector input, w/ handler"
-    (let [params {:successful                true
-                  :use-handler               true
+    (let [params {:use-handler               true
                   :http-response             {:success  true
                                               :response {:body "{
   \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
@@ -1319,31 +1326,494 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
                                                                                            :content "There once was a bright firefly..."}
                                                                            :finish_reason "stop"}]}}
                                               :stream   false}}]
-      (perform-complete-test params)))
-  )
+      (perform-complete-messages-or-user-message-arity-test params)))
+  ;;
+  ;; unsuccessful
+  (testing "fail: string input, no handler"
+    (let [params {:use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  "Hi"
+                  :expected-caller-response  {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}
+                  :expected-handler-response nil}]
+      (perform-complete-messages-or-user-message-arity-test params)))
+  (testing "fail: string input, w/ handler"
+    (let [params {:use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  "Hi"
+                  :expected-caller-response  {:success false, :stream false}
+                  :expected-handler-response {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}}]
+      (perform-complete-messages-or-user-message-arity-test params)))
+  (testing "fail: vector input, no handler"
+    (let [params {:use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  [{:role "system" :content "You are helpful assistant"}
+                                              {:role "user" :content "Can you recommend fun places to travel for hiking?"}
+                                              {:role "assistant" :content "Here are some hiking destinations I recommend..."}
+                                              {:role "user" :content "What do you like about x?"}]
+                  :expected-caller-response  {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}
+                  :expected-handler-response nil}]
+      (perform-complete-messages-or-user-message-arity-test params)))
+  (testing "fail: vector input, w/ handler"
+    (let [params {:use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  [{:role "system" :content "You are helpful assistant"}
+                                              {:role "user" :content "Can you recommend fun places to travel for hiking?"}
+                                              {:role "assistant" :content "Here are some hiking destinations I recommend..."}
+                                              {:role "user" :content "What do you like about x?"}]
+                  :expected-caller-response  {:success false, :stream false}
+                  :expected-handler-response {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}}]
+      (perform-complete-messages-or-user-message-arity-test params))))
 
 
+(defn perform-complete-messages-user-message-arity-test
+  [params]
+  (let [updated-params (prep-complete-and-chat-test params)]
+    (with-redefs [http/post (fn [_] (:http-response params))]
+      (let [actual-caller-response (chat/complete (:prepared-request updated-params) (:api-key updated-params) (:messages updated-params) (:user-message updated-params))]
+        (check-complete-and-chat-test updated-params actual-caller-response)))))
 
 
-;; successful:
-;; prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response
-;;
-;; since these have the same responses except with 'chat' returning a ':messages' key, this function tests:
-;;   - (complete [prepared-request api-key messages user-message])
-;;   - (chat [prepared-request api-key messages user-message]
-;(deftest complete-messages-user-message-arity-and-chat-test
-;  (testing "x"
-;    (let [params {:successful                true
-;                  :use-handler               false
-;                  :prepared-request          {}
-;                  :api-key                   "ABC123"
-;                  :messages                  []
-;                  :user-message              "Hi"
-;                  :expected-caller-response  {}
-;                  :expected-handler-response {}}]
-;      (perform-complete-and-chat-test params)))
-;
-;
-;  ;; todo
-;  )
+(deftest complete-messages-user-message-arity-test
+  (testing "success: string input, no handler"
+    (let [params {:use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}
+                  :expected-handler-response nil}]
+      (perform-complete-messages-user-message-arity-test params)))
+  (testing "success: string input, w/ handler"
+    (let [params {:use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success  true
+                                              :stream   false
+                                              :messages ["There once was a bright firefly..."]}
+                  :expected-handler-response {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}}]
+      (perform-complete-messages-user-message-arity-test params)))
+  (testing "success: vector input, no handler"
+    (let [params {:use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}
+                  :expected-handler-response nil}]
+      (perform-complete-messages-user-message-arity-test params)))
+  (testing "success: vector input, w/ handler"
+    (let [params {:use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success  true
+                                              :stream   false
+                                              :messages ["There once was a bright firefly..."]}
+                  :expected-handler-response {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}}]
+      (perform-complete-messages-user-message-arity-test params)))
+  ;;
+  ;; unsuccessful
+  (testing "fail: string input, no handler"
+    (let [params {:use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}
+                  :expected-handler-response nil}]
+      (perform-complete-messages-user-message-arity-test params)))
+  (testing "fail: string input, w/ handler"
+    (let [params {:use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success false, :stream false}
+                  :expected-handler-response {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}}]
+      (perform-complete-messages-user-message-arity-test params)))
+  (testing "fail: vector input, no handler"
+    (let [params {:use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}
+                  :expected-handler-response nil}]
+      (perform-complete-messages-user-message-arity-test params)))
+  (testing "fail: vector input, w/ handler"
+    (let [params {:use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {},
+      \"finish_reason\": \"length\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success false, :stream false}
+                  :expected-handler-response {:success     false
+                                              :response    {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                   :object  "chat.completion"
+                                                                   :created 1745025332
+                                                                   :model   "gpt-4o-2024-08-06"
+                                                                   :choices [{:index         0
+                                                                              :message       {}
+                                                                              :finish_reason "length"}]}}
+                                              :stream      false
+                                              :error-code  :request-failed-limit
+                                              :reason-list ["stopped" "token" "limit"]}}]
+      (perform-complete-messages-user-message-arity-test params))))
 
+
+(defn perform-chat-test
+  [params]
+  (let [updated-params (prep-complete-and-chat-test params)]
+    (with-redefs [http/post (fn [_] (:http-response params))]
+      (let [actual-caller-response (chat/chat (:prepared-request updated-params) (:api-key updated-params) (:messages updated-params) (:user-message updated-params))]
+        (check-complete-and-chat-test updated-params actual-caller-response)))))
+
+
+(deftest complete-chat-test
+  ;;
+  ;; success
+  (testing "success"
+    (let [reader-input "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\"A\"},\"index\":0,\"finish_reason\":null}]}\n
+data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{\"content\":\" chunk\"},\"index\":0,\"finish_reason\":null}]}\n
+data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1677858244,\"model\":\"gpt-4\",\"choices\":[{\"delta\":{},\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+          params {:use-handler               true
+                  :http-response             {:success  true
+                                              :stream   true
+                                              :response {:a    1
+                                                         :body (get-reader reader-input)}}
+                  :prepared-request          {:request-config  {:model "chatmodel"}
+                                              :response-config {:stream true}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success    true
+                                              :stream     true
+                                              :stream-end true
+                                              :paused     false
+                                              :messages   [{:role "system", :content "You are a helpful assistant"}
+                                                           {:role "user", :content "Recommend places to hike"}
+                                                           {:role "assistant", :content "A chunk"}]}
+                  :expected-handler-response {:success    true
+                                              :stream     true
+                                              :response   {:a    1
+                                                           :data {:id      "chatcmpl-abc123"
+                                                                  :object  "chat.completion.chunk"
+                                                                  :created 1677858244
+                                                                  :model   "gpt-4"
+                                                                  :choices [{:delta         {}
+                                                                             :index         0
+                                                                             :finish_reason "stop"}]}}
+                                              :chunk-num  2
+                                              :stream-end true
+                                              :paused     false
+                                              :message    "A chunk"}}]
+      (perform-chat-test params)))
+  ;;
+  ;; fail
+  (testing "fail"
+    (let [reader-input "error: An error occurred."
+          params {:use-handler               true
+                  :http-response             {:success  true
+                                              :stream   true
+                                              :response {:a    1
+                                                         :body (get-reader reader-input)}}
+                  :prepared-request          {:request-config  {:model "chatmodel"}
+                                              :response-config {:stream true}}
+                  :api-key                   "ABC123"
+                  :messages                  [{:role "system" :content "You are a helpful assistant"}]
+                  :user-message              "Recommend places to hike"
+                  :expected-caller-response  {:success     false
+                                              :error-code  :stream-event-error
+                                              :reason-list ["stream" "error"]
+                                              :paused      false
+                                              :stream      true
+                                              :stream-end  true}
+                  :expected-handler-response {:success     false
+                                              :stream      true
+                                              :response    {:a 1}
+                                              :error-code  :stream-event-error
+                                              :reason-list ["stream" "error"]
+                                              :paused      false
+                                              :stream-end  true}}]
+      (perform-chat-test params))))
