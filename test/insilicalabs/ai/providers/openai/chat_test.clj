@@ -1106,86 +1106,244 @@ data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created
       (perform-successful-complete-response-test response request true expected-caller-response expected-handler-response))))
 
 
-;; todo
-(defn perform-successful-complete-and-chat-test
+;; todo - building tests
+(defn prep-complete-and-chat-test
+  [params]
+  (let [actual-handler-response (atom nil)
+        handler-fn (fn [resp] (reset! actual-handler-response resp))
 
-  ([prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response]
-   (let []
-    (perform-successful-complete-and-chat-test COMPLETE prepared-request api-key messages user-message use-handler-fn
-                                              expected-caller-response expected-handler-response)
-   (perform-successful-complete-and-chat-test CHAT prepared-request api-key messages user-message use-handler-fn
-                                              expected-caller-response expected-handler-response)))
+        prepared-request (if (:use-handler params)
+                           (assoc-in (:prepared-request params) [:response-config :handler-fn] handler-fn)
+                           (:prepared-request params))
 
-  ([function-under-test prepared-request api-key messages user-message use-handler-fn expected-caller-response
-    expected-handler-response]
-   (let [actual-handler-response (atom nil)
-         handler-fn (fn [resp] (reset! actual-handler-response resp))
+        expected-caller-reason-list (:reason-list (:expected-caller-response params))
+        expected-caller-response (-> (:expected-caller-response params)
+                                     (dissoc :reason-list))
 
-         prepared-request (if use-handler-fn
-                            (assoc-in prepared-request [:response-config :handler-fn] handler-fn)
-                            prepared-request)
-
-         expected-caller-reason-list (:reason-list expected-caller-response)
-         expected-caller-response (-> expected-caller-response
-                                      (dissoc :reason-list))
-
-         expected-handler-reason-list (:reason-list expected-handler-response)
-         expected-handler-response (-> expected-handler-response
-                                       (dissoc :reason-list))
-
-         ;; do the function call
-         actual-caller-response (if (= function-under-test :complete)
-                                  (complete prepared-request api-key messages-or-user-message))
-
-         actual-caller-reason (:reason actual-caller-response)
-         actual-caller-response (dissoc actual-caller-response :reason)
-
-         actual-handler-reason (:reason @actual-handler-response)
-         actual-handler-response (-> @actual-handler-response
-                                     (dissoc :reason))]
-
-     (is (= expected-caller-response actual-caller-response))
-     (is (= expected-handler-response actual-handler-response))
-     (if (some? expected-handler-reason-list)
-       (is-every-substring actual-handler-reason expected-handler-reason-list)
-       (is (nil? actual-handler-reason)))
-     (if (some? expected-caller-reason-list)
-       (is-every-substring actual-caller-reason expected-caller-reason-list)
-       (is (nil? actual-caller-reason))))))
+        expected-handler-reason-list (:reason-list (:expected-handler-response params))
+        expected-handler-response (-> (:expected-handler-response params)
+                                      (dissoc :reason-list))]
+    (-> params
+        (assoc :actual-handler-response actual-handler-response)
+        (assoc :handler-fn handler-fn)
+        (assoc :prepared-request prepared-request)
+        (assoc :expected-caller-reason-list expected-caller-reason-list)
+        (assoc :expected-caller-response expected-caller-response)
+        (assoc :expected-handler-reason-list expected-handler-reason-list)
+        (assoc :expected-handler-response expected-handler-response))))
 
 
-;; todo
-(defn perform-unsuccessful-complete-and-chat-test
-  ([prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response]
-   (perform-unsuccessful-complete-and-chat-test COMPLETE prepared-request api-key messages user-message use-handler-fn
-                                                expected-caller-response expected-handler-response)
-   (perform-unsuccessful-complete-and-chat-test CHAT prepared-request api-key messages user-message use-handler-fn
-                                                expected-caller-response expected-handler-response))
+;; todo - building tests
+(defn check-complete-and-chat-test
+  [{:keys [expected-caller-response
+           actual-handler-response
+           expected-handler-response
+           expected-handler-reason-list
+           expected-caller-reason-list]} actual-caller-response]
+  (let [actual-caller-reason (:reason actual-caller-response)
+        actual-caller-response (dissoc actual-caller-response :reason)
 
-  ([function-under-test prepared-request api-key messages user-message use-handler-fn expected-caller-response
-    expected-handler-response]
-   ))
+        actual-handler-reason (:reason @actual-handler-response)
+        actual-handler-response (-> @actual-handler-response
+                                    (dissoc :reason))]
+    (is (= expected-caller-response actual-caller-response))
+    (is (= expected-handler-response actual-handler-response))
+    (if (some? expected-handler-reason-list)
+      (is-every-substring actual-handler-reason expected-handler-reason-list)
+      (is (nil? actual-handler-reason)))
+    (if (some? expected-caller-reason-list)
+      (is-every-substring actual-caller-reason expected-caller-reason-list)
+      (is (nil? actual-caller-reason)))))
+
+
+(defn perform-complete-test
+  [params]
+  (let [updated-params (prep-complete-and-chat-test params)]
+    (with-redefs [http/post (fn [_] (:http-response params))]
+      (let [actual-caller-response (chat/complete (:prepared-request updated-params) (:api-key updated-params) (:messages-or-user-message updated-params))]
+        (check-complete-and-chat-test updated-params actual-caller-response)))))
+
+
+;; since these have the same responses except with 'chat' returning a ':messages' key, this function performs the tests
+;; for:
+;;   - (complete [prepared-request api-key messages user-message])
+;;   - (chat [prepared-request api-key messages user-message]
+(defn perform-complete-and-chat-test
+  [params])
+
+
+;; this function tests the (complete [prepared-request api-key messages-or-user-message]) arity of the function
+(deftest complete-messages-or-user-message-arity-test
+  (testing "success: string input, no handler"
+    (let [params {:successful                true
+                  :use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  "Hi"
+                  :expected-caller-response  {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}
+                  :expected-handler-response nil}]
+      (perform-complete-test params)))
+  (testing "success: string input, w/ handler"
+    (let [params {:successful                true
+                  :use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  "Hi"
+                  :expected-caller-response  {:success  true
+                                              :stream   false
+                                              :messages ["There once was a bright firefly..."]}
+                  :expected-handler-response {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}}]
+      (perform-complete-test params)))
+  (testing "success: vector input, no handler"
+    (let [params {:successful                true
+                  :use-handler               false
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  [{:role "system" :content "You are helpful assistant"}
+                                              {:role "user" :content "Can you recommend fun places to travel for hiking?"}
+                                              {:role "assistant" :content "Here are some hiking destinations I recommend..."}
+                                              {:role "user" :content "What do you like about x?"}]
+                  :expected-caller-response  {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}
+                  :expected-handler-response nil}]
+      (perform-complete-test params)))
+  (testing "success: vector input, w/ handler"
+    (let [params {:successful                true
+                  :use-handler               true
+                  :http-response             {:success  true
+                                              :response {:body "{
+  \"id\": \"chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA\",
+  \"object\": \"chat.completion\",
+  \"created\": 1745025332,
+  \"model\": \"gpt-4o-2024-08-06\",
+  \"choices\": [
+    {
+      \"index\": 0,
+      \"message\": {
+        \"role\": \"assistant\",
+        \"content\": \"There once was a bright firefly...\"
+      },
+      \"finish_reason\": \"stop\"
+    }
+  ]}"}}
+                  :prepared-request          {:request-config {:model "chatmodel"}}
+                  :api-key                   "ABC123"
+                  :messages-or-user-message  [{:role "system" :content "You are helpful assistant"}
+                                              {:role "user" :content "Can you recommend fun places to travel for hiking?"}
+                                              {:role "assistant" :content "Here are some hiking destinations I recommend..."}
+                                              {:role "user" :content "What do you like about x?"}]
+                  :expected-caller-response  {:success  true
+                                              :stream   false
+                                              :messages ["There once was a bright firefly..."]}
+                  :expected-handler-response {:success  true
+                                              :response {:body {:id      "chatcmpl-BNr5ouwaQourQ5j742hpcbkfixpnA"
+                                                                :object  "chat.completion"
+                                                                :created 1745025332
+                                                                :model   "gpt-4o-2024-08-06"
+                                                                :choices [{:index         0
+                                                                           :message       {:role    "assistant"
+                                                                                           :content "There once was a bright firefly..."}
+                                                                           :finish_reason "stop"}]}}
+                                              :stream   false}}]
+      (perform-complete-test params)))
+  )
+
 
 
 
 ;; successful:
 ;; prepared-request api-key messages user-message use-handler-fn expected-caller-response expected-handler-response
 ;;
-;; tests both 'complete' and 'chat' functions using the same input test data since the only difference between the two
-;; functions is that 'chat' adds a ':messages' key with the user message and response message on success
-(deftest complete-and-chat-test
-  (testing "x"
-    (let [prepared-request {}
-          api-key "ABC123"
-          messages []
-          user-message "Hi"
-          use-handler-fn false
-          expected-caller-response {}
-          expected-handler-response {}]
-      (perform-successful-complete-and-chat-test prepared-request api-key messages user-message use-handler-fn
-                                                 expected-caller-response expected-handler-response)))
-
-
-  ;; todo
-  )
+;; since these have the same responses except with 'chat' returning a ':messages' key, this function tests:
+;;   - (complete [prepared-request api-key messages user-message])
+;;   - (chat [prepared-request api-key messages user-message]
+;(deftest complete-messages-user-message-arity-and-chat-test
+;  (testing "x"
+;    (let [params {:successful                true
+;                  :use-handler               false
+;                  :prepared-request          {}
+;                  :api-key                   "ABC123"
+;                  :messages                  []
+;                  :user-message              "Hi"
+;                  :expected-caller-response  {}
+;                  :expected-handler-response {}}]
+;      (perform-complete-and-chat-test params)))
+;
+;
+;  ;; todo
+;  )
 
