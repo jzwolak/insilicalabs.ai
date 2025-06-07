@@ -15,12 +15,30 @@
 ;;     (load-file "examples/insilicalabs/ai/examples/providers/openai/chat.clj")
 ;;   If a file changes, such as:
 ;;     (require '[insilicalabs.ai.providers.openai.chat] :reload)
+;;   To reload all:
+;;     (require '[insilicalabs.ai.providers.openai.chat :refer :all] :reload)
+;;     (load-file "examples/insilicalabs/ai/examples/providers/openai/chat.clj")
+
+
+;; QUICK START:
+;;   - Write a function to retrieve the API key, such as in 'get-api-key'
+;;   - Reference the function 'chat-non-stream-no-handler-fn' for examples in the next steps:
+;;   - Create a prepared request, such as with 'create-prepared-request' or 'create-prepared-request-from-config' (see
+;;     'demo-config' for the latter)
+;;   - Create a vector of previous messages, such as using 'create-messages'.  Often an initial 'system' type message
+;;     to prompt the model that it is a "helpful assistant".
+;;   - Make the request with '(chat/chat <api key string> <messages string vector> <user message string>)'
+;;   - Check if the response was successful with '(:success response)'
+;;     - If successful, then print the response content with '(chat/get-response-as-string <response>)'
+;;     - If unsuccessful, then print the error as in 'print-error'
 
 
 (def ^:const model-default "gpt-4o")
 
 
 (defn get-api-key-path
+  "Prompts the user for the file path to the API key and returns that path as a string or 'nil' if the user aborted the
+  process."
   []
   (println "Enter the path to the file containing the API key, or enter \"0\" to exit:")
   (let [path (clojure.string/trim (read-line))]
@@ -33,17 +51,19 @@
 
 
 (defn get-api-key
+  "Reads the file at the string path `api-key-path` and returns the contents."
   [api-key-path]
   (clojure.string/trim (slurp api-key-path)))
 
 
 (defn print-error
+  "Prints the error messages from the response `response` to a request."
   [response]
   (println "An error occurred while processing your request:")
   (println "\n\n")
   (println response)
   (println "\n\n")
-  (println "  fail-point: " (:fail-point response))
+  (println "  error-code: " (:error-code response))
   (println "  reason    : " (:reason response))
   (if (contains? response :exception)
     (println "  exception : " (:exception response))))
@@ -73,32 +93,19 @@
 
 
 (defn complete-non-stream-no-handler-fn
+  "Demonstrate a 'complete' request without a handler."
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})
         messages (chat/create-messages "You are a helpful assistant." nil)]
     (loop []
-      (println "")
-      (println "LOOP MESSAGES------------------------------------------------------------------")
-      ;; A reminder that the messages are not updated for a completion.
-      (println messages)
-      (println "------------------------------------------------------------------LOOP MESSAGES")
-      (println "")
-      (println "PROMPT------------------------------------------------------------------")
       (println "Enter text to send for a non-streaming complete without handler function, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
           (= user-message "0") (println "Leaving non-streaming complete without handler function")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
-                  (println "JSON RESPONSE------------------------------------------------------------------")
-                  (println response)
-                  (println "------------------------------------------------------------------JSON RESPONSE")
-                  (println "")
                   (if (:success response)
-                    (do
-                      (println "FORMATTED CONTENT RESPONSE--------------------------------------------------------")
-                      (println (chat/get-response-as-string response))
-                      (println "--------------------------------------------------------FORMATTED CONTENT RESPONSE"))
+                    (println (chat/get-response-as-string response))
                     (print-error response))
                   (recur)))))))
 
@@ -268,13 +275,15 @@
 
 
 
-
+;; Display a menu of different complete and chat options, get the user's selection, then execute the appropriate
+;; function.
 (let [api-key-path (get-api-key-path)]
   (loop []
     ;;
     ;; complete
     (println "")
-    (println "------------------------------------")
+    (println "Select an option:")
+    (println "")
     (println "complete:")
     (println "  (1) non-streaming without handler function")
     (println "  (2) non-streaming with handler function")
@@ -288,9 +297,11 @@
     (println "  (6) streaming")
     (println "")
     ;;
+    ;; create and use config to generate prepared requests
     (println "other:")
     (println "  (7) create config, then streaming")
     (println "")
+    ;;
     ;;
     (println "(0) EXIT")
     (let [choice (clojure.string/trim (read-line))]
@@ -306,7 +317,9 @@
         "5" (do (chat-non-stream-with-handler-fn api-key-path) (recur))
         "6" (do (chat-stream api-key-path) (recur))
         ;;
+        ;; demo config
         "7" (do (demo-config api-key-path) (recur))
+        ;;
         ;;
         "0" (println "bye")
         (do (println "Error: Invalid choice, please select again.")

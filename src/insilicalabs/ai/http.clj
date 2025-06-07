@@ -12,7 +12,8 @@
 (def ^:const http-request-config-mods {:throw-exceptions false})
 (def ^:const http-get-config-mods {:method :get})
 (def ^:const http-post-config-mods {:method :post})
-(def ^:const allowed-http-config-keys [:method :url :throw-exceptions :socket-timeout :connection-timeout])
+(def ^:const allowed-http-config-keys [:content-type :accept :method :headers :body :url :throw-exceptions
+                                       :socket-timeout :connection-timeout])
 
 (defn- build-check-config
   "Builds and checks an HTTP configuration, based on the HTTP configuration `config`.  On success returns a map with
@@ -54,7 +55,7 @@
          :error-code :http-config-empty
          :reason     "Config map cannot be empty."}
         (let [config-final (merge http-request-config-mods config)
-              disallowed-keys (remove (set allowed-http-config-keys) (keys config))]
+              disallowed-keys (vec (remove (set allowed-http-config-keys) (keys config)))]
           (if (seq disallowed-keys)
             {:success    false
              :error-code :http-config-unknown-key
@@ -130,11 +131,12 @@
   [config & more-configs]
   ;; Can test handling responses to HTTP failure codes at https://httpstat.us/
   (let [config-in (apply merge config more-configs)
-        config-updated (build-check-config config-in)]
-    (if-not (:success config-updated)
-      config-updated
+        config-updated-response (build-check-config config-in)]
+    (if-not (:success config-updated-response)
+      config-updated-response
       (try
-        (let [response (dissoc (http/request config-updated) :http-client)]
+        (let [config-updated (:config config-updated-response)
+              response (dissoc (http/request config-updated) :http-client)]
           (if (http/success? response)
             {:success  true
              :response response}
