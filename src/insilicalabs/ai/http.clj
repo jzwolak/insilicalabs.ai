@@ -13,7 +13,7 @@
 (def ^:const http-get-config-mods {:method :get})
 (def ^:const http-post-config-mods {:method :post})
 (def ^:const allowed-http-config-keys [:content-type :accept :method :headers :body :url :throw-exceptions
-                                       :socket-timeout :connection-timeout])
+                                       :socket-timeout :connection-timeout :as])
 
 (defn- build-check-config
   "Builds and checks an HTTP configuration, based on the HTTP configuration `config`.  On success returns a map with

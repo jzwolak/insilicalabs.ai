@@ -10,6 +10,7 @@
             [insilicalabs.ai.config :as http-config]
             [insilicalabs.ai.providers.openai.chat :as chat]))
 
+
 ;; USAGE:
 ;;   In REPL:
 ;;     (load-file "examples/insilicalabs/ai/examples/providers/openai/chat.clj")
@@ -22,15 +23,17 @@
 
 ;; QUICK START:
 ;;   - Write a function to retrieve the API key, such as in 'get-api-key'
-;;   - Reference the function 'chat-non-stream-no-handler-fn' for examples in the next steps:
+;;   - Reference the function 'chat-non-stream-no-handler-fn' for examples in the next steps.
 ;;   - Create a prepared request, such as with 'create-prepared-request' or 'create-prepared-request-from-config' (see
 ;;     'demo-config' for the latter)
-;;   - Create a vector of previous messages, such as using 'create-messages'.  Often an initial 'system' type message
-;;     to prompt the model that it is a "helpful assistant".
+;;   - Create a vector of previous messages, if any, such as using 'create-messages'.  Often an initial 'system' type
+;;     message to prompt the model that it is a "helpful assistant".
 ;;   - Make the request with '(chat/chat <api key string> <messages string vector> <user message string>)'
 ;;   - Check if the response was successful with '(:success response)'
 ;;     - If successful, then print the response content with '(chat/get-response-as-string <response>)'
 ;;     - If unsuccessful, then print the error as in 'print-error'
+;;
+;;  For a streaming example, see 'chat-stream'.
 
 
 (def ^:const model-default "gpt-4o")
@@ -60,7 +63,7 @@
   "Prints the error messages from the response `response` to a request."
   [response]
   (println "An error occurred while processing your request:")
-  (println "\n\n")
+  (println "")
   (println response)
   (println "\n\n")
   (println "  error-code: " (:error-code response))
@@ -71,37 +74,40 @@
 
 
 (defn non-streaming-handler-fn
+  "Serves as a non-streaming handler function, printing the response `response` to stdout."
   [response]
+  (println "")
+  (println "HANDLER:")
   (if (:success response)
-    (do
-      (println "")
-      (println "HANDLER RESPONSE----------------------------------------------------------------------")
-      (println (chat/get-response-as-string response))
-      (println "----------------------------------------------------------------------HANDLER RESPONSE"))
-    (do
-      (println "\n\n")
-      (print-error response))))
+    (println (chat/get-response-as-string response))
+    (print-error response)))
 
 
 (defn streaming-handler-fn
+  "Serves as a streaming handler function, printing the response `response` to stdout."
   [response]
   (if (:success response)
-    (print (chat/get-response-as-string response))
+    (print (chat/get-response-as-string response))          ;; note the 'print' vs 'println' statement
     (do
       (println "\n\n")
+      (println "HANDLER:")
       (print-error response))))
 
 
 (defn complete-non-stream-no-handler-fn
-  "Demonstrate a 'complete' request without a handler."
+  "Demonstrate a non-streaming 'complete' request without a handler."
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})
         messages (chat/create-messages "You are a helpful assistant." nil)]
+    (println "")
+    (println "")
+    (println "Demonstrate a non-streaming 'complete' request without a handler.")
     (loop []
-      (println "Enter text to send for a non-streaming complete without handler function, or enter \"0\" to exit.")
+      (println "")
+      (println "Enter text to send for a non-streaming 'complete' request without handler function, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving non-streaming complete without handler function")
+          (= user-message "0") (println "Leaving non-streaming 'complete' without handler function.")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
                   (if (:success response)
@@ -111,139 +117,125 @@
 
 
 (defn complete-non-stream-with-handler-fn
+  "Demonstrate a non-streaming 'complete' request with a handler."
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default} {:handler-fn non-streaming-handler-fn})
         messages (chat/create-messages "You are a helpful assistant." nil)]
+    (println "")
+    (println "")
+    (println "Demonstrate a non-streaming 'complete' request without a handler.")
     (loop []
       (println "")
-      (println "LOOP MESSAGES------------------------------------------------------------------")
-      ;; A reminder that the messages are not updated for a completion.
-      (println messages)
-      (println "------------------------------------------------------------------LOOP MESSAGES")
-      (println "")
-      (println "PROMPT------------------------------------------------------------------")
-      (println "Enter text to send for a non-streaming complete with handler function, or enter \"0\" to exit.")
+      (println "Enter text to send for a non-streaming 'complete' request with handler function, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving non-streaming complete with handler function")
+          (= user-message "0") (println "Leaving non-streaming 'complete' with handler function.")
           :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
-                  (println "JSON RESPONSE----------------------------------------------------------------------")
-                  (println response)
-                  (println "----------------------------------------------------------------------JSON RESPONSE")
-                  (println "")
+                  (println "CALLER:")
+                  (if (:success response)
+                    (println "success")
+                    (print-error response))
                   (recur)))))))
 
 
 (defn complete-stream
+  "Demonstrate a streaming 'complete' request (implicitly with handler function)."
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream     true
                                                                                :handler-fn streaming-handler-fn})
         messages (chat/create-messages "You are a helpful assistant." nil)]
+    (println "")
+    (println "")
+    (println "Demonstrate a streaming 'complete' request (implicitly with handler function).")
     (loop []
       (println "")
-      (println "LOOP MESSAGES------------------------------------------------------------------")
-      ;; A reminder that the messages are not updated for a completion.
-      (println messages)
-      (println "------------------------------------------------------------------LOOP MESSAGES")
-      (println "")
-      (println "PROMPT------------------------------------------------------------------")
-      (println "Enter text to send for a streaming complete, or enter \"0\" to exit.")
+      (println "Enter text to send for a streaming 'complete' request, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
+        (println "")
         (cond
-          (= user-message "0") (println "Leaving streaming complete")
-          :else (do
-                  (println "")
-                  (println "RESPONSE----------------------------------------------------------------------")
-                  (chat/complete prepared-request (get-api-key api-key-path) messages user-message)
-                  (println "")
-                  (println "----------------------------------------------------------------------RESPONSE")
+          (= user-message "0") (println "Leaving streaming 'complete'.")
+          :else (let [response (chat/complete prepared-request (get-api-key api-key-path) messages user-message)]
+                  (println "\n\n")
+                  (println "CALLER:")
+                  (if (:success response)
+                    (println "success")
+                    (print-error response))
                   (recur)))))))
 
 
 (defn chat-non-stream-no-handler-fn
+  "Demonstrate a non-streaming 'chat' request without a handler."
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default})]
+    (println "")
+    (println "")
+    (println "Demonstrate a non-streaming 'chat' request without a handler.")
     (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
       (println "")
-      (println "LOOP MESSAGES------------------------------------------------------------------")
-      ;; Messages are updated for a chat.
-      (println messages)
-      (println "------------------------------------------------------------------LOOP MESSAGES")
-      (println "")
-      (println "PROMPT------------------------------------------------------------------")
-      (println "Enter text to send for a non-streaming chat without a handler function, or enter \"0\" to exit.")
+      (println "Enter text to send for a non-streaming 'chat' request without handler function, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving non-streaming chat without a handler function")
+          (= user-message "0") (println "Leaving non-streaming 'chat' without a handler function.")
           :else (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
-                  (println "JSON RESPONSE------------------------------------------------------------------")
-                  (println response)
-                  (println "------------------------------------------------------------------JSON RESPONSE")
-                  (println "")
                   (if (:success response)
-                    (do
-                      (do
-                        (println "FORMATTED CONTENT RESPONSE--------------------------------------------------------")
-                        (println (chat/get-response-as-string response))
-                        (println "--------------------------------------------------------FORMATTED CONTENT RESPONSE"))
-                      (recur (:messages response)))
-                    (do
-                      (print-error response)
-                      (recur messages)))))))))
+                    (println (chat/get-response-as-string response))
+                    (print-error response))
+                  (recur (:messages response))))))))
 
 
 (defn chat-non-stream-with-handler-fn
+  "Demonstrate a non-streaming 'chat' request with a handler."
   [api-key-path]
   (let [prepared-request (chat/create-prepared-request {:model model-default} {:handler-fn non-streaming-handler-fn})]
+    (println "")
+    (println "")
+    (println "Demonstrate a non-streaming 'chat' request without a handler.")
     (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
       (println "")
-      (println "LOOP MESSAGES------------------------------------------------------------------")
-      ;; Messages are updated for a chat.
-      (println messages)
-      (println "------------------------------------------------------------------LOOP MESSAGES")
-      (println "")
-      (println "PROMPT------------------------------------------------------------------")
-      (println "Enter text to send for a non-streaming chat with handler function, or enter \"0\" to exit.")
+      (println "Enter text to send for a non-streaming 'chat' with handler function, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving non-streaming chat with handler function")
+          (= user-message "0") (println "Leaving non-streaming 'chat' with handler function.")
           :else (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
                   (println "")
-                  (println "RESPONSE----------------------------------------------------------------------")
-                  (println response)
-                  (println "----------------------------------------------------------------------RESPONSE")
-                  (println "")
+                  (println "CALLER:")
+                  (if (:success response)
+                    (println "success")
+                    (print-error response))
                   (recur (:messages response))))))))
 
 
 (defn chat-stream
   [api-key-path]
+  "Demonstrate a streaming 'chat' request (implicitly with handler function)."
   (let [prepared-request (chat/create-prepared-request {:model model-default} {:stream     true
                                                                                :handler-fn streaming-handler-fn})]
+    (println "")
+    (println "")
+    (println "Demonstrate a streaming 'chat' request (implicitly with handler function).")
     (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
       (println "")
-      (println "LOOP MESSAGES------------------------------------------------------------------")
-      ;; Messages are updated for a chat.
-      (println messages)
-      (println "------------------------------------------------------------------LOOP MESSAGES")
-      (println "")
-      (println "PROMPT------------------------------------------------------------------")
-      (println "Enter text to send for a streaming chat, or enter \"0\" to exit.")
+      (println "Enter text to send for a streaming 'chat' request, or enter \"0\" to exit.")
       (let [user-message (clojure.string/trim (read-line))]
         (cond
-          (= user-message "0") (println "Leaving streaming chat")
-          :else (do
-                  (println "")
-                  (println "RESPONSE----------------------------------------------------------------------")
-                  (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
-                    (println response)
-                    (println "----------------------------------------------------------------------RESPONSE")
-                    (recur (:messages response)))))))))
+          (= user-message "0") (println "Leaving streaming 'chat'.")
+          :else (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
+                  (println "\n\n")
+                  (println "CALLER:")
+                  (if (:success response)
+                    (println "success")
+                    (print-error response))
+                  (recur (:messages response))))))))
+
 
 (defn demo-config
+  "Demonstrate the use of a configuration to build prepared requests.  Use a streaming 'chat' request."
   [api-key-path]
+  (println "")
+  (println "")
+  (println "Demonstrate the use of a configuration to build prepared requests.  Use a streaming 'chat' request.")
   (let [config {:http-config     (http-config/create-http-config 6000 10000)
                 ;;:auth-config   (config/create-auth-config "my project" "my organization")
                 :request-config  (config/create-request-config model-default)
@@ -255,23 +247,17 @@
     (let [prepared-request (chat/create-prepared-request-from-config config)]
       (loop [messages (chat/create-messages "You are a helpful assistant." nil)]
         (println "")
-        (println "LOOP MESSAGES------------------------------------------------------------------")
-        ;; Messages are updated for a chat.
-        (println messages)
-        (println "------------------------------------------------------------------LOOP MESSAGES")
-        (println "")
-        (println "PROMPT------------------------------------------------------------------")
-        (println "Enter text to send for a streaming chat (demo config), or enter \"0\" to exit.")
+        (println "Enter text to send for a streaming 'chat' request, or enter \"0\" to exit.")
         (let [user-message (clojure.string/trim (read-line))]
           (cond
-            (= user-message "0") (println "Leaving streaming chat (demo config)")
-            :else (do
-                    (println "")
-                    (println "RESPONSE----------------------------------------------------------------------")
-                    (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
-                      (println response)
-                      (println "----------------------------------------------------------------------RESPONSE")
-                      (recur (:messages response))))))))))
+            (= user-message "0") (println "Leaving streaming 'chat' (demo config).")
+            :else (let [response (chat/chat prepared-request (get-api-key api-key-path) messages user-message)]
+                    (println "\n\n")
+                    (println "CALLER:")
+                    (if (:success response)
+                      (println "success")
+                      (print-error response))
+                    (recur (:messages response)))))))))
 
 
 
@@ -303,7 +289,7 @@
     (println "")
     ;;
     ;;
-    (println "(0) EXIT")
+    (println "  (0) EXIT")
     (let [choice (clojure.string/trim (read-line))]
       (case choice
         ;;
