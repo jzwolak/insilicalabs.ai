@@ -89,16 +89,10 @@ prepared request as follows:
       (println "\n\n")
       (println "ERROR:" response))))
 
-(def prepared-request (chat/create-prepared-request {:model "gpt-4o"} {:stream true
+(def prepared-request (chat/create-prepared-request {:model "gpt-4o"} {:stream     true
                                                                        :handler-fn response-handler-fn}))
 
 (def response (chat/chat api-key messages user-message))
-
-(if (:success response)
-  (do
-    (println (chat/get-response-as-string response))
-    (println "UPDATED MESSAGES: " (:messages response)))
-  (println "ERROR: " response))
 ```
 
 
