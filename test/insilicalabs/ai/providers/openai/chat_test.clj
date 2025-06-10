@@ -13,16 +13,10 @@
   (:import (java.io BufferedReader IOException Reader StringReader)))
 
 
-(def ^:const COMPLETE-MOUM :complete-moum)
-(def ^:const COMPLETE-M-UM :complete-m-um)
-(def ^:const CHAT :chat)
-
-
 (defn is-every-substring
   [string list]
   (is (every? #(str/includes? (str/lower-case string) (str/lower-case %)) list)
       (str "Expected reason substrings " list " to be in actual reason: " string)))
-
 
 
 (defn check-prepared-request-test
@@ -38,8 +32,10 @@
   ([auth-config http-config request-config response-config expected]
    (check-prepared-request-test (chat/create-prepared-request auth-config http-config request-config response-config) expected)))
 
+
 (defn handler
   [])
+
 
 (deftest create-prepared-request-test
   ;;

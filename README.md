@@ -1,122 +1,149 @@
 # insilicalabs.ai
+[![Powered by InSilica Labs](https://img.shields.io/badge/Powered_by-InSilica_Labs-blue?link=https%3A%2F%2Finsilicalabs.com%2Findex.php)](https://insilicalabs.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/mit)
+<p></p>
 
-Reduce friction when getting up and running with the OpenAI API.
+*Reduce friction and speed up LLM API integration— pass a simple map, get structured results.*
+
+The *InSilica Labs AI* library helps accelerate integration with AI providers' APIs for Large Language Models (LLMs).
+The AI library initially supports OpenAI's Chat Completions API, and others will follow.
 
 ## Quick Start
 
-Create your OpenAI developer account and an API key. Store the api key in a file some place secure.
+### OpenAI
 
-Then do the following:
+Create your OpenAI developer account and an API key.  Securely store the API key.  The examples presented here assume
+the API key is stored in a file.
 
-```
-> clj
-=> (require '[clojure.ai :as ai])
-=> (def openai-api-key (clojure.string/trim (slurp "openai-api-key.txt"))) ; read api key from file
-=> (ai/complete {:openai-api-key openai-api-key} "Recommend some places to travel. Please be terse.")
-```
+#### Chat Completions
 
-## Chatting
+##### Complete
 
-Using Clojure's `*1` variable in the REPL you can hold a chat as follows.
+Created a prepared request.  A prepared request captures and pre-processes those aspects of the request that typically
+don't change between subsequent requests.  The `complete` and `chat` functions require a prepared request that, at a
+minimum, defines the model to use.
 
-```
-=> (def config {:openai-api-key (str/trim (slurp "openai-api-key.txt"))})
-=> (ai/chat config [] "Recommend some places to travel. Be terse.")
-=>
-[{:role "user", :content "Recommend some places to travel. Be terse."}
- {:role "assistant",
-  :content "Kyoto, Japan  
-            Santorini, Greece  
-            Reykjavik, Iceland  
-            Marrakech, Morocco  
-            Queenstown, New Zealand  
-            Cape Town, South Africa  
-            Lisbon, Portugal  
-            Banff, Canada  
-            Seville, Spain  
-            Hoi An, Vietnam"}]
-=> (ai/chat config *1 "Tell me more about Seville. Be terse.")
-=>
-[{:role "user", :content "Recommend some places to travel. Be terse."}
- {:role "assistant",
-  :content "Kyoto, Japan  
-            Santorini, Greece  
-            Reykjavik, Iceland  
-            Marrakech, Morocco  
-            Queenstown, New Zealand  
-            Cape Town, South Africa  
-            Lisbon, Portugal  
-            Banff, Canada  
-            Seville, Spain  
-            Hoi An, Vietnam"}
- {:role "user", :content "Tell me more about Seville. Be terse."}
- {:role "assistant",
-  :content "Seville, in southern Spain, is renowned for its rich Moorish history, flamenco dancing, and stunning architecture. Highlights include the Alcázar Palace, Seville Cathedral, and the Giralda tower. The city offers vibrant tapas bars and the lively Feria de Abril festival. Its historic streets and orange trees create a charming atmosphere."}]
+```clojure
+(ns example.mycompany
+  (:require [insilicalabs.ai.providers.openai.chat :as chat]))
+    
+(def prepared-request (chat/create-prepared-request {:model "gpt-4o"}))
 ```
 
-And so on.
+Create initial messages for the completion, if any.  Often an initial 'system' type  message may be desired to prompt 
+the model that it is "a helpful assistant".
 
-## Streaming
-
-OpenAI has a streaming API to receive partial completions of a chat request in a stream until the whole completion is
-sent. Use this with `stream` as follows. `stream` takes a consumer, which is a single arg fn that will
-do something with the partial chat completion.
-
+```clojure
+(def messages (chat/create-message "You are a helpful assistant." nil))
 ```
-=> (ai/stream config "Recommend some places to travel." #(print %))
+
+Obtain the user message to send to the chat completion, `user-message`.
+
+
+Make the chat completion request.
+
+```clojure
+(def response (chat/complete api-key messages user-message))
 ```
+
+Display the content of the first response item if successful else display an error message.
+
+```clojure
+(if (:success response)
+  (println (chat/get-response-as-string response))
+  (println "ERROR: " response))
+```
+
+##### Chat
+
+The `chat` function follows the same process as `complete` above, but the `chat` function also returns updated messages,
+on success, that include the user message and the model's response.
+
+Call `chat` instead of `complete`.
+
+```clojure
+(def response (chat/chat api-key messages user-message))
+```
+
+Display the content of the first response item and the updated messages if successful else display an error message.
+When making subsequent calls to `chat`, use the updated messages in `(:messages response)`.
+
+```clojure
+(if (:success response)
+  (do
+    (println (chat/get-response-as-string response))
+    (println "UPDATED MESSAGES: " (:messages response)))
+  (println "ERROR: " response))
+```
+
+##### Streaming
+
+Streamed responses can be provided by setting `:stream` to `true` and by providing a handler function, both in the
+prepared request as follows:
+
+```clojure
+(defn response-handler-fn
+  (if (:success response)
+    (print (chat/get-response-as-string response))  ;; note the 'print' vs 'println' statement
+    (do
+      (println "\n\n")
+      (println "ERROR:" response))))
+
+(def prepared-request (chat/create-prepared-request {:model "gpt-4o"} {:stream true
+                                                                       :handler-fn response-handler-fn}))
+
+(def response (chat/chat api-key messages user-message))
+
+(if (:success response)
+  (do
+    (println (chat/get-response-as-string response))
+    (println "UPDATED MESSAGES: " (:messages response)))
+  (println "ERROR: " response))
+```
+
+
+## Examples
+
+See the `examples` directory for complete examples of using the library.
+
 
 ## Recommendations
 
-When integrating ChatGPT into your app, we recommend wrapping the fns you plan to use with partial fns that include
-the config. For example, if your API key is stored in the environment variable "OPENAI_API_KEY" then you might do the
-following:
+To help reduce the API key's exposure in memory, we recommend wrapping the functions you plan to use with partial 
+functions that include the config.  For example, if your API key is stored in the environment variable "OPENAI_API_KEY" 
+then you might do the following:
 
-```
+```clojure
 (ns example.mycompany
-  (:require [insilicalabs.ai :as ai]))
+  (:require [insilicalabs.ai.providers.openai.chat :as chat]))
 
-(defn get-config []
-  {:openai-api-key (System/getenv "OPENAI_API_KEY")})
+(defn get-api-key 
+  []
+  (System/getenv "OPENAI_API_KEY"))
 
-(defn chat [context new-message] (ai/chat (get-config) context new-message))
+(def response (chat/chat (get-api-key) messages user-message))
 ```
 
-Reconstructing the config on each call should be a small cost compared to calling the API and has the benefit of
-not storing the API key in memory. If performance is of the utmost concern or retrieving the API key is much more
-expensive, then a delay may be useful as follows.
+If performance is of the utmost concern or retrieving the API key is much more expensive, then a delay may be useful as 
+follows.
 
+```clojure
+(defonce api-key (delay (System/getenv "OPENAI_API_KEY")))
+
+(defn response 
+  [messages user-message] 
+  (response/chat @api-key messages user-message))
 ```
-(defonce config (delay {:openai-api-key (System/getenv "OPENAI_API_KEY}))
 
-(defn chat [context new-message] (ai/chat @config context new-message))
-```
 
-## Error Codes
+## Building the Project
 
-| Error Code                       | Description                                                                                                                                                                   |
-|----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| :http-config-nil                 | The HTTP configuration (and thus the entire configuration) was `nil`                                                                                                          |
-| :http-config-not-map             | The HTTP configuration (and thus the entire configuration) was not a map                                                                                                      |
-| :http-config-empty               | The HTTP configuration (and thus the entire configuration) was an empty map                                                                                                   |
-| :http-config-unknown-key         | The HTTP configuration contained an unknown key                                                                                                                               |
-| :http-config-method-missing      | The HTTP configuration did not specify the `:method` key to define the HTTP method, e.g. `GET` or `POST`                                                                      |
-| :http-config-method-invalid      | The HTTP configuration `:method` key was not one of the valid values, either `:get` or `:post`                                                                                |
-| :http-config-url-missing         | The HTTP configuration did not specify the `:url` key to define the URL to which to connect                                                                                   |
-| :http-config-url-not-string      | The HTTP configuration `:url` key was not a string                                                                                                                            |
-| :http-request-failed             | The HTTP request failed.  See the `:response` key for reason phrase `:reason-phrase` and status code `:status` in the returned map.  The failure was not due to an exception. |
-| :http-request-failed-ioexception | The HTTP request failed due to an `IOException`.  See `:exception` for the exception in the returned map.                                                                     |
-| :http-request-failed-exception   | The HTTP request failed due an `Exception`.  See `:exception` for the exception in the returned map.                                                                          |
-| :request-config-missing-api-key  | The request configuration does not contain the key ':api-key' in map ':auth-config'.                                                                                          |
-| :request-config-api-proj-org     | The request configuration contains one of key ':api-proj' or key ':api-org' in map ':auth-config' but not the other.                                                          |
-| :request-config-model-missing    | The request configuration does not contain key ':model in map ':request-config'.                                                                                              |
-| :request-config-messages-missing | The request configuration does not contain key ':messages' in map ':request-config'.                                                                                          |
-| :parse-failed                    | An error occurred when parsing the response from the server to JSON                                                                                                           |
-| :request-failed-limit            | The response stopped due to the token limit being reached                                                                                                                     |
-| :request-failed-content-filter   | The response was blocked by the content filter for potentially sensitive or unsafe content                                                                                    |
-| :stream-read-failed              | During a streaming response, a stream read exception occurred                                                                                                                 |
-| :stream-event-unknown            | During a streaming response, an unrecognized stream event was received                                                                                                        |
-| :stream-event-error              | During a streaming response, a stream error event was received                                                                                                                |
+Run the tests from the command line with: `clj -X:test`.
+
+
+## License
+
+The *InSilica Labs AI* library is released under the MIT license.
 
 
 

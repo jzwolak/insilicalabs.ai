@@ -18,7 +18,7 @@
 
 (defn create-prepared-request
   "Creates and returns a prepared request, suitable for submitting as part of a request.  A prepared request captures
-  those values and pre-processes those aspects of the request that typically don't change between subsequent requests.
+  and pre-processes those aspects of the request that typically don't change between subsequent requests.
 
   A prepared request is a map incorporating four configurations, represented by maps, consisting of:  authentication,
   HTTP, request, and response configurations.
