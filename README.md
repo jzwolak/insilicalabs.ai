@@ -82,7 +82,7 @@ Streamed responses can be provided by setting `:stream` to `true` and by providi
 prepared request as follows:
 
 ```clojure
-(defn response-handler-fn
+(defn response-handler-fn [response]
   (if (:success response)
     (print (chat/get-response-as-string response))  ;; note the 'print' vs 'println' statement
     (do
